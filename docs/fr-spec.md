@@ -127,6 +127,15 @@ draw 1 3 34.000000 56.000000 0.000000 -1.000000 1.000000 0.000000 0.000000 255 2
 print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 ```
 
+### 6.3 会话封装〔封版〕
+
+- 二进制 `.frb`（小端）：header 50B = magic `"FRB1"`(4B) + version u8=1 + width u16 + height u16 + sha 32B（cmd.tbl 规范表 sha256 原始摘要）+ loglvl u8（0=off 1=base 2=full）+ seed u64；其后 entries 重复至 EOF：tag u8——`0x01` frame（u32 body_len + body，body 为 rows 逐条、各以 opcode 起始，0xFF 禁入帧内）、`0xFF` cmnt（str，禁 \r \n）；其它 tag 非法。**帧号由顺序隐含**（从 0 连续计数，文本侧显式校验）。
+- 文本 `.fr`（canonical）：首行 `frb1 <w> <h> <sha64hex小写> <off|base|full> <seed十进制>`；`cmnt <原文>`（"cmnt " 之后逐字保留；可在任意两帧之间）；`frame <n>`（n 连续，行即帧界——cmnt 行亦闭合帧块）；row 行位于 frame 块内。
+- asset 行文本规范形：kind 用名字（`asset image <id> <w> <h> <hex>` / `asset canvas <id> <w> <h>` / `asset quad <id> <6×%.6f>` / `asset font <id> <size%.6f> <hex>`；hex 小写连续、空载荷 `-`）；二进制侧 kind 用编号常量（§6.1）。
+- 错误口径：文本侧 SessionError 含行号；二进制侧含偏移；行级错误包装透传（含肇事值）；dump 侧对非法 Session 结构以 SessionError 拒绝（共享校验，双出口一致）。
+- 实现分层：行级编解码为表生成（§6.1/§9）；**会话层是结构性行（CMNT/帧定界不随 cmd.tbl 变化），手写库 `tools/fr_session.py`**，不参与重生成——这是"生成代码不手改"纪律的明确边界。
+- decode 无 cursor 变体的务实解（帧内行长用重编码长度推进）与升级路径见 `tools/fr_session.py` docstring。
+
 ## 7. 命令集〔v1.2 对照 LÖVE 11.5 源码定稿〕
 
 真源 = `tables/cmd.tbl`（签名/来源行号/状态见彼处）。摘要：
@@ -165,7 +174,7 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 
 ## 12. 取证清单
 
-1. **首版实收频度**：love-src/testing 测试套件的绘制调用统计 → cmd.tbl 实收顺序与优先级（第一个"原版"就是宿主自己的测试）。**已取证**（2026-10-27，数字在 cmd.tbl notes，取证源与复现命令固化在表头注释）；printf 收录判定随 B1。
+1. **首版实收频度**：love-src/testing 测试套件的绘制调用统计 → cmd.tbl 实收顺序与优先级（第一个"原版"就是宿主自己的测试）。**已取证**（2026-10-27，数字在 cmd.tbl notes，取证源与复现命令固化在表头注释）；printf（freq=4）已取证，收录判定见 §13 v1.2.2。
 2. `printf`（含 wrap/align）、`points` 多色、`SpriteBatch` / `Mesh` / Shader 的收录时机——按实验内核实收频度增删。
 3. **无头资产创建 API 面**（ImageData 注册 + live 物化）——**已定案**：语义替代方案（D8-5，同名原签名、CPU 注册实现），非取证项（见 love2d-gap.md §七.3）。
 4. A 方案"表重建事件"（rehash → 整表重发）的实现细节与 st 行噪声实测。
@@ -176,3 +185,4 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 - **v1.1**（2026-10-26，封版）：`proc` → `log`；级别收敛纯三档，去生产端模块分类；err 行豁免于 off 级；读取侧筛选不进格式。
 - **v1.2**（2026-10-26，修订）：**sango/GDI 遗产彻底剥离**（gdi_map.tsv 退役删除；lowering 归未来前端私仓）；**命令集对照 LÖVE 11.5 源码重定**（spr/txt/fill/blt/lut/loop/rng 退役；新增 clear/draw/print/rect/line/poly/circle/arc/points/rt/scissor/dt/asset）；并入口径：dt 进帧头、frame 0=checkpoint、错误帧语义、loglvl 会话内不可变、几何固定、回放注入默认严格档、math.random boot 归一 love.math、内核禁直读输入状态。频度准则的"原版"改指宿主：首版 = love-src/testing 调用统计。
 - **v1.2.1**（2026-10-27，B0）：行级字节/文本编码随 fr-gen 首版封版（%.6f 量化域、小端、opcode=表行序、0xFF=CMNT、variant/asset 口径常量命名锚、文本转义集含 \r 且 C0/U+2028/2029 文本侧拒收、指纹=规范表 sha256）；帧级/会话级封装与 asset 文本规范形归 B1。频度取证完成（源=origin/main:testing/tests，11.5 tag 无 testing 目录），数字入 cmd.tbl notes；printf freq=4 已取证、收录判定随 B1 实收复核。
+- **v1.2.2**（2026-10-27，B1）：会话级封装封版（§6.3：FRB1 头 50B、entry tag 0x01 帧/0xFF cmnt、帧号隐含连续、asset 文本规范形 kind 名字+hex 载荷、dump 侧共享校验）；fr-as/fr-dis 交付；round-trip 双向回归进仓（golden + 生成式）。printf 复核：print freq=8 ≥ printf freq=4，v1 不单列 printf（后续按实收再议）。

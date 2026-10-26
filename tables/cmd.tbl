@@ -22,7 +22,7 @@
 #
 op	section	signature	source	status	notes
 dt	head	val f32	run loop（love.timer.step 产出）	sealed	回放喂记录值；内核禁读墙钟（lint: love.timer.getTime/os.clock/os.time）
-asset	head	kind u8 id u32 payload...	newImageData/newQuad/newFont/newCanvas 注册点（w_ 边界）	draft	运行中注册资产；frame 0 checkpoint 全量重发。payload: image=RGBA8字节+宽高 / canvas=宽高 / quad=x,y,w,h+总宽总高 / font=字体字节+字号f32
+asset	head	kind u8 id u32 payload...	newImageData/newQuad/newFont/newCanvas 注册点（w_ 边界）	draft	运行中注册资产；frame 0 checkpoint 全量重发。payload: image=RGBA8字节+宽高 / canvas=宽高 / quad=x,y,w,h+总宽总高 / font=字体字节+字号f32；文本规范形已封版（spec §6.3）
 ev	in	slot u32 type str src u8 args...	Event::pump→convert 造 Message（sdl/Event.cpp:178）；w_push（wrap_Event.cpp:75）	sealed	签名=love.event.push 参数序（handlers 键名全集）；src: 0=OS 1=合成 2=自定义；合成事件回放重算对拍（严格注入默认档）
 call	in	slot u32 fn str depth u8 args...	run loop 分发循环（CALL=直接函数调用=栈帧增长）	sealed	同步嵌套记深度；分发中 push 落下一帧快照
 timer	in	slot u32 id u32	update(dt) 结算到期合成	sealed	内核定时器到期事实；归一规则：定时=update 结算产生
