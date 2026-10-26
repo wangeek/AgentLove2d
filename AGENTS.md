@@ -22,8 +22,8 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 ## Setup commands
 
 - 运行 LÖVE：`love2d/love-11.5-win64/love.exe <游戏目录>`
-- Python 工具（fr-*）：`python tools/<tool>.py ...`（待建，第一批 fr-gen）
-- 测试：`pytest tests/`（待建立）
+- Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
+- 测试：`pytest tests/`（29 项：解析/量化/编解码/零漂移与跨目标锚）
 
 ## Project layout
 
