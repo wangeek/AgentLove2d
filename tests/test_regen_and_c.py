@@ -38,14 +38,14 @@ def test_c_api_face():
 
 
 def test_cross_target_constants():
-    h_def = dict(re.findall(r"#define (FR_[A-Z_]+) (\d+)", H))
-    assert int(h_def["FR_VARIANT_TAG_NUM"]) == fc.VARIANT_TAG_NUM
-    assert int(h_def["FR_VARIANT_TAG_STR"]) == fc.VARIANT_TAG_STR
-    assert int(h_def["FR_VARIANT_TAG_BOOL"]) == fc.VARIANT_TAG_BOOL
-    assert int(h_def["FR_ASSET_KIND_IMAGE"]) == fc.ASSET_KIND_IMAGE
-    assert int(h_def["FR_ASSET_KIND_CANVAS"]) == fc.ASSET_KIND_CANVAS
-    assert int(h_def["FR_ASSET_KIND_QUAD"]) == fc.ASSET_KIND_QUAD
-    assert int(h_def["FR_ASSET_KIND_FONT"]) == fc.ASSET_KIND_FONT
+    # 结构性对拍：.h 全部 FR_ 口径 #define ↔ fr_codec_gen 同名属性（去 FR_ 前缀）
+    # 整体相等——一侧加常量另一侧漏加即红
+    h_def = {name[len("FR_"):]: int(val) for name, val in
+             re.findall(r"#define (FR_(?:VARIANT_TAG|ASSET_KIND)_[A-Z_]+) (\d+)", H)}
+    py_def = {name: getattr(fc, name) for name in dir(fc)
+              if re.match(r"^(?:VARIANT_TAG|ASSET_KIND)_[A-Z_]+$", name)}
+    assert h_def and py_def  # 收集为空 = 正则坏了，不许空对空假绿
+    assert h_def == py_def
 
 
 def test_c_compile_smoke(tmp_path):

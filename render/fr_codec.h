@@ -8,6 +8,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* 未来被引擎 C++ TU include 时保持 C 链接符号 */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FR_CODEC_TBL_SHA256 "7f3427691b6e405a65cabe1d00709f3ee085b9e569d1b3764fb84b00c60bafa6"
 
 /* 口径常量（与 Python 生成物 tools/fr_codec_gen.py 同名同值，跨目标相等测试锚） */
@@ -21,7 +26,8 @@
 
 typedef struct { uint8_t r, g, b, a; } fr_rgba8;
 
-/* opcode 枚举：值 = 表数据行序（0x00 起按表行）；CMNT 为 .fr 注释行，不占字节序号 */
+/* opcode 枚举：值 = 表数据行序（0x00 起按表行，生成期守卫行数 ≤255 防 0xFF 碰撞）；
+ * CMNT 为 .fr 注释行，不占字节序号，固定 0xFF */
 typedef enum {
     FR_OP_DT = 0x00,
     FR_OP_ASSET = 0x01,
@@ -74,5 +80,9 @@ int fr_encode_rt(fr_buf *b);
 int fr_encode_scissor(fr_buf *b);
 int fr_encode_s_crc(fr_buf *b);
 int fr_encode_d_crc(fr_buf *b);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FR_CODEC_GENERATED_H */
