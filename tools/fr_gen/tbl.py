@@ -28,6 +28,7 @@ def parse(text):
     'args...' / 'payload...'（仅允许出现在签名末位）或 None。
     """
     rows = []
+    seen = set()
     for lineno, raw in enumerate(text.splitlines(), 1):
         # 注意：不能整行 strip 后再分列——尾随 \t 是空的 notes 列，
         # 剥掉会把 6 列误判成 5 列。strip 只用于空行/注释判断。
@@ -39,6 +40,9 @@ def parse(text):
         if len(parts) < 6:
             raise TblError(f"第 {lineno} 行列数不足 6（实得 {len(parts)}）: {raw!r}")
         op, section, signature, source, status, notes = parts[:6]
+        if op in seen:
+            raise TblError(f"第 {lineno} 行 op 重复 {op!r}: {raw!r}")
+        seen.add(op)
         if section not in SECTIONS:
             raise TblError(f"第 {lineno} 行 section 非法 {section!r}: {raw!r}")
         if status not in STATUSES:

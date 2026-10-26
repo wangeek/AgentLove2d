@@ -29,6 +29,10 @@ def test_bad_type_rejected():
     with pytest.raises(tbl.TblError):
         tbl.parse("dt\thead\tval f64x\ts\tsealed\t\n")
 
+def test_duplicate_op_rejected():
+    with pytest.raises(tbl.TblError):
+        tbl.parse("dt\thead\tval f32\ts\tsealed\t\ndt\thead\tval f32\ts\tsealed\t\n")
+
 def test_variadic_must_be_last():
     with pytest.raises(tbl.TblError):
         tbl.parse("ev\tin\tslot u32 args... src u8\ts\tsealed\t\n")

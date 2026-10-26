@@ -15,6 +15,11 @@ def test_qf_roundtrip_bits():
         q = qf(v)
         assert struct.pack("<f", q) == struct.pack("<f", float(f"{q:.6f}"))
 
+def test_qf_collapse_boundary_anchor():
+    # 塌缩边界锚：|v|<5e-7 量化后塌缩到 ±0.0，但 -0.0/0.0 位型互异，双射保持
+    assert qf(1e-7) == 0.0 and qf(-1e-7) == 0.0
+    assert struct.pack("<f", qf(-1e-7)) != struct.pack("<f", qf(1e-7))
+
 def test_nan_inf_rejected():
     with pytest.raises(ValueError):
         qf(float("nan"))
