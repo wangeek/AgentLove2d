@@ -70,7 +70,7 @@ LÖVE 是 display list 的第一个消费者 / 实验床；无头内核独立（
 2. **绘制生产消费者=引擎内 C 回放器**（解码后直调 Graphics::draw 系）；**捕获后回放**：内核模式 love.graphics.* 只记录不执行，present 后回放上屏——视觉真源唯一=IR。另留一个 Lua 消费者作契约证人。
 3. **事件捕获/注入在 C**（Event::pump 单咽喉 + w_push）；编排=自有 run loop（帧首排干快照再分发——poll 中途 push 落帧由构造定义；CALL 深度在此记录）。
 4. **log=VM 外机制（PG WAL 同构）**：A 堆镜像 diff 主力（LuaJIT gc.root 全对象链 + 影子副本 memcmp 出脏槽位 → st 物理行，同次遍历产 s_crc；full 级专用，off/base 不碰堆）+ B 字节码写拦截第二批（TSET handler/trace store IR 下插，O(变动数) 真 WAL）；路径=消费端 logical decoding（登记表：对象→路径，随 checkpoint 周期重发；登记项带 epoch 与首末帧——防 GC 指针复用的幽灵路径，checkpoint 全量重推校正）。Lua 侧树遍历已否决（过 Lua C API，帧预算击穿）。rngc 仍为边界捕获；debug 栈钩仅限 fr-trace 审计；内核 RNG 统一走 love.math.random。
-5. **资源创建 API 语义替代，而非禁用**（2026-10-26 用户拍板，D9-5 就此定案）：A 类 GL 依赖创建面（newImage/newCanvas/newFont/newQuad 等 13 项，清单见 love2d-gap.md §七.3 附件）在 fork 中**保留原名原签名**，实现整体替换为 CPU 侧资产注册——校验实参、登记 asset、返回资产代理对象；内核代码保持地道 LÖVE 写法，不开平行 API。draw 等渲染期调用经捕获层引用资产号。live/headless 同一实现（差异只在渲染端有无 GL）。无 IR 对应的（newShader/newVideo 等按频度增补）暂记 err 行。
+5. **资源创建 API 语义替代，而非禁用**（2026-10-26 用户拍板；D9 第 5 条就此定案）：A 类 GL 依赖创建面（newImage/newCanvas/newFont/newQuad 等 13 项，清单见 love2d-gap.md §七.3 附件）在 fork 中**保留原名原签名**，实现整体替换为 CPU 侧资产注册——校验实参、登记 asset、返回资产代理对象；内核代码保持地道 LÖVE 写法，不开平行 API。draw 等渲染期调用经捕获层引用资产号。live/headless 同一实现（差异只在渲染端有无 GL）。无 IR 对应的（newShader/newVideo 等按频度增补）暂记 err 行。
 6. 纪律承 D6 精神：内核与渲染的唯一通道是 FR 流；内核不得读渲染端状态。
 
 取证细节见 docs/love2d-gap.md v2。

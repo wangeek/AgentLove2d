@@ -31,7 +31,7 @@ st	log	obj u32 key str val variant	方案A 堆镜像 diff 物理 records（docs/
 err	log	what str	未收录 API 调用/兜底触发/表重建计数	sealed	豁免于 off 级：忠实性事实不可关
 clear	out	color rgba8	love.graphics.clear（wrap_Graphics.cpp:2912）	sealed	freq=54
 draw	out	tex u32 quad u32 x f32 y f32 rot f32 sx f32 sy f32 ox f32 oy f32 color rgba8	love.graphics.draw（:2332，注册表 :2984）	sealed	tex=image/canvas 资产号；quad 0=整图，否则 quad 资产号；翻转=sx/sy 负值；color 每行自带（setColor 折参数） freq=24
-print	out	font u32 text str x f32 y f32 rot f32 sx f32 sy f32 color rgba8	love.graphics.print（:2988）	sealed	printf 待频度证据再收（§12） freq=8
+print	out	font u32 text str x f32 y f32 rot f32 sx f32 sy f32 color rgba8	love.graphics.print（:2988）	sealed	printf freq=4 已取证、收录判定随 B1 实收复核（§12）；print freq=8
 rect	out	mode u8 x f32 y f32 w f32 h f32 rx f32 ry f32 width f32 color rgba8	love.graphics.rectangle（:3012）	sealed	mode: 0=fill 1=line；rx/ry 圆角；width 线宽（line 模式） freq=42
 line	out	pts f32[] width f32 color rgba8	love.graphics.line（:3011）	sealed	freq=11
 poly	out	mode u8 pts f32[] color rgba8	love.graphics.polygon（:3016）	sealed	freq=3
