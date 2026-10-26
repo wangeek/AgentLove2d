@@ -44,12 +44,24 @@ def test_every_op_roundtrips():
     for op, fields in samples:
         buf = fc.encode_row(op, fields)
         assert fc.decode_row(memoryview(buf)) == (op, fields)   # 二进制全员
-        if op != "asset":
-            assert fc.parse_line(fc.render_line(op, fields)) == (op, fields)  # 文本除 asset
+        assert fc.parse_line(fc.render_line(op, fields)) == (op, fields)  # 文本全员
 
-def test_asset_text_not_implemented():
-    with pytest.raises(NotImplementedError):
-        fc.render_line("asset", dict(kind=1, id=2, w=640, h=480))
+def test_asset_text_form():
+    cases = [
+        ("asset", dict(kind=0, id=1, w=2, h=2, data=b"\x00\x01\x02\x03")),
+        ("asset", dict(kind=0, id=5, w=2, h=2, data=b"")),
+        ("asset", dict(kind=1, id=2, w=640, h=480)),
+        ("asset", dict(kind=2, id=3, x=0.0, y=0.0, w=16.0, h=16.0, sw=256.0, sh=256.0)),
+        ("asset", dict(kind=3, id=4, size=12.0, data=b"fake-ttf")),
+    ]
+    assert fc.render_line(*cases[0]) == "asset image 1 2 2 00010203"
+    assert fc.render_line(*cases[1]) == "asset image 5 2 2 -"
+    for op, fields in cases:
+        assert fc.parse_line(fc.render_line(op, fields)) == (op, fields)
+
+def test_asset_text_bad_kind_name():
+    with pytest.raises(ValueError):
+        fc.parse_line("asset sound 1")
 
 def test_cr_escape_single_line():
     # I-1：\r 转义后整行不被撕裂（splitlines 也切 \r），文本/二进制双往返

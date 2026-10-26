@@ -33,6 +33,15 @@ ASSET_KIND_CANVAS = 1
 ASSET_KIND_QUAD = 2
 ASSET_KIND_FONT = 3
 
+# asset 文本形态 kind 名（spec §6.3：文本用名字，二进制仍是数字）
+_ASSET_KIND_NAMES = {
+    ASSET_KIND_IMAGE: "image",
+    ASSET_KIND_CANVAS: "canvas",
+    ASSET_KIND_QUAD: "quad",
+    ASSET_KIND_FONT: "font",
+}
+_ASSET_KIND_BY_NAME = {v: k for k, v in _ASSET_KIND_NAMES.items()}
+
 # variant 值域（解码不动点）：num=裸 float/int；str=单元素 tuple ("...",)；bool=单元素 tuple (False,)/(True,)。
 # 编码侧额外容忍裸 str/bool 与 (num,) 包装，但它们不是 round-trip 不动点。
 
@@ -324,14 +333,50 @@ def _render_tok(typ, v):
     raise ValueError("未知类型: %r" % typ)
 
 
+def _asset_hex(tok):
+    """hex 载荷 token → bytes（"-" 记空载荷；非法 hex → ValueError 含肇事 token）。"""
+    if tok == "-":
+        return b""
+    try:
+        return bytes.fromhex(tok)
+    except ValueError:
+        raise ValueError("asset hex 载荷非法: %r" % tok) from None
+
+
+def _render_asset(fields):
+    """asset fields dict → canonical token 列表（kind 用名字；hex 载荷，空载荷记 "-"）。
+
+    形态（spec §6.3）：asset image <id> <w> <h> <hex> / asset canvas <id> <w> <h> /
+    asset quad <id> <x> <y> <w> <h> <sw> <sh> / asset font <id> <size> <hex>。
+    浮点先 qf 入量化域再 %.6f，与二进制形态量化后一致。
+    """
+    kind = fields["kind"]
+    name = _ASSET_KIND_NAMES.get(kind)
+    if name is None:
+        raise ValueError("asset kind 非法: %r" % (kind,))
+    toks = ["asset", name, str(int(fields["id"]))]
+    if kind == ASSET_KIND_CANVAS:
+        toks.extend((str(int(fields["w"])), str(int(fields["h"]))))
+    elif kind == ASSET_KIND_QUAD:
+        toks.extend("%.6f" % qf(fields[k]) for k in ("x", "y", "w", "h", "sw", "sh"))
+    else:  # image / font：尺寸或字号后接 hex 载荷
+        if kind == ASSET_KIND_IMAGE:
+            toks.extend((str(int(fields["w"])), str(int(fields["h"]))))
+        else:
+            toks.append("%.6f" % qf(fields["size"]))
+        hexed = fields["data"].hex()
+        toks.append(hexed if hexed else "-")
+    return toks
+
+
 def render_line(op, fields):
-    """行 → canonical 文本（空格分隔 token）。asset 文本形态随 B1 定稿。"""
+    """行 → canonical 文本（空格分隔 token）；asset 走 _render_asset（kind 用名字）。"""
     try:
         spec = _BY_OP[op]
     except KeyError:
         raise ValueError("未知 op: %r" % op) from None
     if op == "asset" or spec["variadic"] == "payload...":
-        raise NotImplementedError("asset 行文本形态随 B1 定稿，当前仅二进制编解码")
+        return " ".join(_render_asset(fields))
     toks = [op]
     for name, typ in spec["fields"]:
         toks.extend(_render_tok(typ, fields[name]))
@@ -374,8 +419,45 @@ def _tokenize(line):
     return toks
 
 
+def _parse_asset(toks, pos):
+    """token 列表 → (asset fields dict, 新位置)；_render_asset 的逆。
+
+    kind 用名字，未知名 → ValueError 含 op 与肇事 token；hex 载荷 "-" 记空；
+    浮点 qf 入域，与二进制解码一致。
+    """
+    op = toks[0]
+
+    def take():
+        nonlocal pos
+        if pos >= len(toks):
+            raise ValueError("asset 行 token 不足")
+        tok = toks[pos]
+        pos += 1
+        return tok
+
+    name = take()
+    if name not in _ASSET_KIND_BY_NAME:
+        raise ValueError("asset kind 名非法: %r" % name)
+    kind = _ASSET_KIND_BY_NAME[name]
+    fields = {"kind": kind, "id": int(take())}
+    if kind == ASSET_KIND_IMAGE:
+        fields["w"] = int(take())
+        fields["h"] = int(take())
+        fields["data"] = _asset_hex(take())
+    elif kind == ASSET_KIND_CANVAS:
+        fields["w"] = int(take())
+        fields["h"] = int(take())
+    elif kind == ASSET_KIND_QUAD:
+        for key in ("x", "y", "w", "h", "sw", "sh"):
+            fields[key] = qf(float(take()))
+    else:  # font
+        fields["size"] = qf(float(take()))
+        fields["data"] = _asset_hex(take())
+    return fields, pos
+
+
 def parse_line(line):
-    """canonical 文本 → (op, fields dict)（render_line 的逆）。asset 见 render_line。"""
+    """canonical 文本 → (op, fields dict)（render_line 的逆）；asset 走 _parse_asset。"""
     toks = _tokenize(line)
     if not toks:
         raise ValueError("空行")
@@ -384,8 +466,6 @@ def parse_line(line):
         spec = _BY_OP[op]
     except KeyError:
         raise ValueError("未知 op: %r" % op) from None
-    if op == "asset" or spec["variadic"] == "payload...":
-        raise NotImplementedError("asset 行文本形态随 B1 定稿，当前仅二进制编解码")
     pos = 1
 
     def take():
@@ -434,11 +514,14 @@ def parse_line(line):
         raise ValueError("未知类型: %r" % typ)
 
     fields = {}
-    for name, typ in spec["fields"]:
-        fields[name] = parse_one(typ)
-    if spec["variadic"] == "args...":
-        argc = int(take())
-        fields["args"] = [parse_variant() for _ in range(argc)]
+    if op == "asset" or spec["variadic"] == "payload...":
+        fields, pos = _parse_asset(toks, pos)
+    else:
+        for name, typ in spec["fields"]:
+            fields[name] = parse_one(typ)
+        if spec["variadic"] == "args...":
+            argc = int(take())
+            fields["args"] = [parse_variant() for _ in range(argc)]
     if pos != len(toks):
         raise ValueError("%s 行多余 token: %r" % (op, toks[pos:]))
     return op, fields
