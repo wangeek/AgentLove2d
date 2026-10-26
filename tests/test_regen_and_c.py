@@ -9,15 +9,17 @@ import pytest
 from tools.fr_gen import tbl, gen_python, gen_c
 from tools import fr_codec_gen as fc
 
-ROWS = tbl.parse(open("tables/cmd.tbl", encoding="utf-8").read())
-H = open("render/fr_codec.h", encoding="utf-8").read()
-C = open("render/fr_codec.c", encoding="utf-8").read()
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROWS = tbl.parse(open(os.path.join(_ROOT, "tables", "cmd.tbl"), encoding="utf-8").read())
+H = open(os.path.join(_ROOT, "render", "fr_codec.h"), encoding="utf-8").read()
+C = open(os.path.join(_ROOT, "render", "fr_codec.c"), encoding="utf-8").read()
 
 
 def test_python_regen_no_drift(tmp_path):
     out = str(tmp_path / "fr_codec_gen.py")
     gen_python.generate(ROWS, out)
-    assert open(out, encoding="utf-8").read() == open("tools/fr_codec_gen.py", encoding="utf-8").read()
+    assert open(out, encoding="utf-8").read() == open(
+        os.path.join(_ROOT, "tools", "fr_codec_gen.py"), encoding="utf-8").read()
 
 
 def test_c_regen_no_drift(tmp_path):
@@ -52,7 +54,8 @@ def test_c_compile_smoke(tmp_path):
     cc = shutil.which("gcc") or shutil.which("clang")
     if not cc:
         pytest.skip("no C compiler on PATH")
-    r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror", "-c", "render/fr_codec.c",
+    r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror", "-c",
+                        os.path.join(_ROOT, "render", "fr_codec.c"),
                         "-o", str(tmp_path / "fr_codec.o")],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr

@@ -518,6 +518,8 @@ def generate(rows, out_path):
     """
     from tools.fr_gen.tbl import tbl_sha256  # 惰性导入：__main__ 直跑时先修 sys.path
     _check_coverage(rows)
+    if len(rows) > 255:
+        raise ValueError("表行数 %d 超 255：第 0x100 行起 opcode 与 FR_OP_CMNT=0xFF 值域碰撞" % len(rows))
     code = (_TEMPLATE
             .replace("@@SHA@@", tbl_sha256(rows))
             .replace("@@OPS@@", _ops_literal(rows)))

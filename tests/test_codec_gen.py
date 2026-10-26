@@ -1,9 +1,12 @@
 # tests/test_codec_gen.py
+import os
+
 import pytest
 from tools.fr_gen import tbl
 from tools import fr_codec_gen as fc
 
-ROWS = tbl.parse(open("tables/cmd.tbl", encoding="utf-8").read())
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROWS = tbl.parse(open(os.path.join(_ROOT, "tables", "cmd.tbl"), encoding="utf-8").read())
 BASE_SHA = "7f3427691b6e405a65cabe1d00709f3ee085b9e569d1b3764fb84b00c60bafa6"
 
 def test_ops_match_table():
