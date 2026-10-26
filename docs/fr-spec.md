@@ -112,7 +112,7 @@ frame 1
 - 解码侧错误族：截断/残尾类 ValueError 含 op 名与偏移（`op X 在 off Y 截断` / `X 行尾冗余字节`）；语义类（非法 tag/kind、非法转义等）ValueError 原样透传（信息含肇事值，不带 op 上下文）
 - **文本 canonical〔封版〕**：LF 行尾、无行尾空白、行=空格分隔 token；f32/f64 恒 %.6f；整数十进制；rgba8 四整数；str=双引号包裹，转义集 `\\ \" \n \r \t`，**其余 C0（U+0000–U+001F）与 U+2028/U+2029 在文本 render 侧拒收**（行完整性——splitlines 也切 U+2028）；二进制侧不拒（行完整性仅文本侧约束）；variant 文本形态 `num <%.6f>` / `str "<quoted>"` / `bool 0|1`；args...=argc 十进制+argc 个 variant token
 - 指纹 = sha256(规范表)：数据行 `op\tsection\tsignature` 逐行 join("\n")+"\n"（UTF-8），忽略 source/status/notes——改注释与备注不破指纹
-- 帧级与会话级封装布局**未在 B0 封版**，归 B1（fr-as/fr-dis 落地时定：session header 字段序、帧定界、CMNT 行在封装中的位置）；asset 行文本规范形同归 B1（B0 生成物 render/parse 两侧 NotImplementedError 占位）
+- 帧级与会话级封装：**已随 B1 封版（§6.3）**；asset 行文本规范形同见 §6.3（B0 期的 NotImplementedError 占位已由 B1 实现取代）
 
 ### 6.2 实测样例行
 
