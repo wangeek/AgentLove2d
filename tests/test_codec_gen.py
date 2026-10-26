@@ -24,7 +24,7 @@ def test_text_render_parse():
     assert fc.parse_line(line) == ("ev", fields)
 
 def test_str_escape():
-    fields = dict(font=2, text='a"b\\c\nd', x=1.0, y=2.0, rot=0.0, sx=1.0, sy=1.0,
+    fields = dict(font=2, text='a  b"c\\d\ne', x=1.0, y=2.0, rot=0.0, sx=1.0, sy=1.0,
                   color=(0, 0, 0, 255))
     line = fc.render_line("print", fields)
     op, got = fc.parse_line(line)
@@ -47,3 +47,41 @@ def test_every_op_roundtrips():
 def test_asset_text_not_implemented():
     with pytest.raises(NotImplementedError):
         fc.render_line("asset", dict(kind=1, id=2, w=640, h=480))
+
+def test_cr_escape_single_line():
+    # I-1：\r 转义后整行不被撕裂（splitlines 也切 \r），文本/二进制双往返
+    fields = dict(font=2, text="a\rb", x=1.0, y=2.0, rot=0.0, sx=1.0, sy=1.0,
+                  color=(0, 0, 0, 255))
+    line = fc.render_line("print", fields)
+    assert len(line.splitlines()) == 1
+    assert fc.parse_line(line) == ("print", fields)
+    buf = fc.encode_row("print", fields)
+    assert fc.decode_row(memoryview(buf)) == ("print", fields)
+
+def test_control_chars_rejected():
+    # I-1：\n\r\t 之外的 C0 与 U+2028/U+2029 文本侧拒收，信息含码位
+    with pytest.raises(ValueError, match=r"U\+0000"):
+        fc.render_line("err", dict(what="a\x00b"))
+    with pytest.raises(ValueError, match=r"U\+2028"):
+        fc.render_line("err", dict(what="a\u2028b"))
+
+def test_truncated_rows_value_error():
+    # I-3：截断（struct.error/IndexError）统一 ValueError，信息含 op 名
+    draw = dict(tex=1, quad=3, x=34.0, y=56.0, rot=0.0, sx=-1.0, sy=1.0,
+                ox=0.0, oy=0.0, color=(255, 255, 0, 255))
+    with pytest.raises(ValueError, match="op draw"):
+        fc.decode_row(memoryview(fc.encode_row("draw", draw)[:-1]))
+    ev = dict(slot=0, type="keypressed", src=0, args=[("return",), (False,)])
+    with pytest.raises(ValueError, match="op ev"):
+        fc.decode_row(memoryview(fc.encode_row("ev", ev)[:-3]))
+
+def test_negative_paths():
+    # M-5：未知 opcode / 行尾冗余字节 / 未闭合字符串 / 未知转义
+    with pytest.raises(ValueError, match="opcode"):
+        fc.decode_row(memoryview(b"\x99"))
+    with pytest.raises(ValueError, match="冗余"):
+        fc.decode_row(memoryview(fc.encode_row("dt", dict(val=1.0)) + b"\x00"))
+    with pytest.raises(ValueError, match="未闭合"):
+        fc.parse_line('err "abc')
+    with pytest.raises(ValueError, match="转义"):
+        fc.parse_line('err "a\\qb"')

@@ -34,6 +34,15 @@ OPS = [
 _BY_OP = {d["op"]: d for d in OPS}
 _BY_OPCODE = {d["opcode"]: d for d in OPS}
 
+# 口径常量（与 Task 6 的 C 头文件同名配对，跨目标相等测试锚）
+VARIANT_TAG_NUM = 1
+VARIANT_TAG_STR = 2
+VARIANT_TAG_BOOL = 3
+ASSET_KIND_IMAGE = 0
+ASSET_KIND_CANVAS = 1
+ASSET_KIND_QUAD = 2
+ASSET_KIND_FONT = 3
+
 # variant 值域（解码不动点）：num=裸 float/int；str=单元素 tuple ("...",)；bool=单元素 tuple (False,)/(True,)。
 # 编码侧额外容忍裸 str/bool 与 (num,) 包装，但它们不是 round-trip 不动点。
 
@@ -44,36 +53,36 @@ def _variant_tag_value(v):
             raise ValueError("variant 只允许裸值或单元素 tuple: %r" % (v,))
         v = v[0]
     if isinstance(v, bool):
-        return 3, (1.0 if v else 0.0)
+        return VARIANT_TAG_BOOL, (1.0 if v else 0.0)
     if isinstance(v, str):
-        return 2, v
+        return VARIANT_TAG_STR, v
     if isinstance(v, (int, float)):
-        return 1, float(v)
+        return VARIANT_TAG_NUM, float(v)
     raise ValueError("variant 值类型不支持: %r" % (v,))
 
 
 def _pack_variant(v):
     """variant → 字节片列表（tag u8 + 载荷；num/bool 载荷为 f64，写入前量化）。"""
     tag, payload = _variant_tag_value(v)
-    if tag == 1:
-        return [b"\x01", struct.pack("<d", qf(payload))]
-    if tag == 2:
+    if tag == VARIANT_TAG_NUM:
+        return [bytes([VARIANT_TAG_NUM]), struct.pack("<d", qf(payload))]
+    if tag == VARIANT_TAG_STR:
         raw = payload.encode("utf-8")
-        return [b"\x02", struct.pack("<I", len(raw)), raw]
-    return [b"\x03", struct.pack("<d", qf(payload))]
+        return [bytes([VARIANT_TAG_STR]), struct.pack("<I", len(raw)), raw]
+    return [bytes([VARIANT_TAG_BOOL]), struct.pack("<d", qf(payload))]
 
 
 def _unpack_variant(mv, off):
     """memoryview → (variant 值, 新偏移)。"""
     tag = mv[off]
     off += 1
-    if tag == 1:
+    if tag == VARIANT_TAG_NUM:
         return qf(struct.unpack_from("<d", mv, off)[0]), off + 8
-    if tag == 2:
+    if tag == VARIANT_TAG_STR:
         (n,) = struct.unpack_from("<I", mv, off)
         off += 4
         return (bytes(mv[off:off + n]).decode("utf-8"),), off + n
-    if tag == 3:
+    if tag == VARIANT_TAG_BOOL:
         return (struct.unpack_from("<d", mv, off)[0] != 0.0,), off + 8
     raise ValueError("variant tag 非法: %r" % tag)
 
@@ -146,14 +155,14 @@ def encode_row(op, fields):
         kind = fields["kind"]
         out.append(struct.pack("<B", kind))
         out.append(struct.pack("<I", fields["id"]))
-        if kind == 0:  # image：u32 w, u32 h, u32 len, RGBA8 字节
+        if kind == ASSET_KIND_IMAGE:  # image：u32 w, u32 h, u32 len, RGBA8 字节
             out.append(struct.pack("<III", fields["w"], fields["h"], len(fields["data"])))
             out.append(fields["data"])
-        elif kind == 1:  # canvas：u32 w, u32 h
+        elif kind == ASSET_KIND_CANVAS:  # canvas：u32 w, u32 h
             out.append(struct.pack("<II", fields["w"], fields["h"]))
-        elif kind == 2:  # quad：6×f32（x y w h sw sh，写入前量化）
+        elif kind == ASSET_KIND_QUAD:  # quad：6×f32（x y w h sw sh，写入前量化）
             out.append(struct.pack("<6f", *(qf(fields[k]) for k in ("x", "y", "w", "h", "sw", "sh"))))
-        elif kind == 3:  # font：f32 size, u32 len, TTF 字节
+        elif kind == ASSET_KIND_FONT:  # font：f32 size, u32 len, TTF 字节
             out.append(struct.pack("<fI", qf(fields["size"]), len(fields["data"])))
             out.append(fields["data"])
         else:
@@ -172,66 +181,79 @@ def encode_row(op, fields):
 
 
 def decode_row(mv):
-    """memoryview → (op, fields dict)：普通行走 fields 序再 args...；asset 按 kind 分支。"""
-    opcode = mv[0]
+    """memoryview → (op, fields dict)：普通行走 fields 序再 args...；asset 按 kind 分支。
+
+    截断错误族统一：struct.error/IndexError 一律包成 ValueError（含 op 名与截断
+    偏移，如 "op draw 在 off 17 截断"）；语义类 ValueError（非法 tag/kind、行尾
+    冗余）原样透传。
+    """
+    try:
+        opcode = mv[0]
+    except IndexError:
+        raise ValueError("空输入：缺 opcode 字节") from None
     try:
         spec = _BY_OPCODE[opcode]
     except KeyError:
         raise ValueError("opcode 非法: %r" % opcode) from None
     op = spec["op"]
     off = 1
-    if op == "asset":
-        kind = mv[off]
-        off += 1
-        (oid,) = struct.unpack_from("<I", mv, off)
-        off += 4
-        fields = {"kind": kind, "id": oid}
-        if kind == 0:  # image
-            w, h, n = struct.unpack_from("<III", mv, off)
-            off += 12
-            fields["w"] = w
-            fields["h"] = h
-            fields["data"] = bytes(mv[off:off + n])
-            off += n
-        elif kind == 1:  # canvas
-            w, h = struct.unpack_from("<II", mv, off)
-            off += 8
-            fields["w"] = w
-            fields["h"] = h
-        elif kind == 2:  # quad
-            vals = struct.unpack_from("<6f", mv, off)
-            off += 24
-            for key, val in zip(("x", "y", "w", "h", "sw", "sh"), vals):
-                fields[key] = qf(val)
-        elif kind == 3:  # font
-            size, n = struct.unpack_from("<fI", mv, off)
-            off += 8
-            fields["size"] = qf(size)
-            fields["data"] = bytes(mv[off:off + n])
-            off += n
-        else:
-            raise ValueError("asset kind 非法: %r" % kind)
+    try:
+        if op == "asset":
+            kind = mv[off]
+            off += 1
+            (oid,) = struct.unpack_from("<I", mv, off)
+            off += 4
+            fields = {"kind": kind, "id": oid}
+            if kind == ASSET_KIND_IMAGE:
+                w, h, n = struct.unpack_from("<III", mv, off)
+                off += 12
+                fields["w"] = w
+                fields["h"] = h
+                fields["data"] = bytes(mv[off:off + n])
+                off += n
+            elif kind == ASSET_KIND_CANVAS:
+                w, h = struct.unpack_from("<II", mv, off)
+                off += 8
+                fields["w"] = w
+                fields["h"] = h
+            elif kind == ASSET_KIND_QUAD:
+                vals = struct.unpack_from("<6f", mv, off)
+                off += 24
+                for key, val in zip(("x", "y", "w", "h", "sw", "sh"), vals):
+                    fields[key] = qf(val)
+            elif kind == ASSET_KIND_FONT:
+                size, n = struct.unpack_from("<fI", mv, off)
+                off += 8
+                fields["size"] = qf(size)
+                fields["data"] = bytes(mv[off:off + n])
+                off += n
+            else:
+                raise ValueError("asset kind 非法: %r" % kind)
+            if off != len(mv):
+                raise ValueError("asset 行尾冗余字节: %d/%d" % (off, len(mv)))
+            return op, fields
+        fields = {}
+        for name, typ in spec["fields"]:
+            fields[name], off = _unpack(mv, off, typ)
+        if spec["variadic"] == "args...":
+            argc = mv[off]
+            off += 1
+            args = []
+            for _ in range(argc):
+                val, off = _unpack_variant(mv, off)
+                args.append(val)
+            fields["args"] = args
         if off != len(mv):
-            raise ValueError("asset 行尾冗余字节: %d/%d" % (off, len(mv)))
+            raise ValueError("%s 行尾冗余字节: %d/%d" % (op, off, len(mv)))
         return op, fields
-    fields = {}
-    for name, typ in spec["fields"]:
-        fields[name], off = _unpack(mv, off, typ)
-    if spec["variadic"] == "args...":
-        argc = mv[off]
-        off += 1
-        args = []
-        for _ in range(argc):
-            val, off = _unpack_variant(mv, off)
-            args.append(val)
-        fields["args"] = args
-    if off != len(mv):
-        raise ValueError("%s 行尾冗余字节: %d/%d" % (op, off, len(mv)))
-    return op, fields
+    except (struct.error, IndexError):
+        raise ValueError("op %s 在 off %d 截断" % (op, off)) from None
 
 
 def _esc(s):
-    """str → 引号内文本：仅转义反斜杠/双引号/换行/制表，其余原样（UTF-8）。"""
+    """str → 引号内文本：转义反斜杠/双引号/换行/回车/制表；其余 C0（0x00-0x1F）
+    与 U+2028/U+2029 拒收（ValueError 含码位）——保住 canonical 文本行不被撕裂。
+    """
     out = []
     for c in s:
         if c == "\\":
@@ -240,9 +262,14 @@ def _esc(s):
             out.append('\\"')
         elif c == "\n":
             out.append("\\n")
+        elif c == "\r":
+            out.append("\\r")
         elif c == "\t":
             out.append("\\t")
         else:
+            cp = ord(c)
+            if cp < 0x20 or cp in (0x2028, 0x2029):
+                raise ValueError("字符码位 U+%04X 拒收：canonical 文本不容纳未转义控制字符" % cp)
             out.append(c)
     return "".join(out)
 
@@ -266,6 +293,8 @@ def _unescape(s):
             out.append('"')
         elif nxt == "n":
             out.append("\n")
+        elif nxt == "r":
+            out.append("\r")
         elif nxt == "t":
             out.append("\t")
         else:
@@ -277,9 +306,9 @@ def _unescape(s):
 def _render_variant(v):
     """variant → token 对：num <%.6f> / str "<引号串>" / bool 0|1。"""
     tag, payload = _variant_tag_value(v)
-    if tag == 1:
+    if tag == VARIANT_TAG_NUM:
         return ["num", "%.6f" % qf(payload)]
-    if tag == 2:
+    if tag == VARIANT_TAG_STR:
         return ["str", '"' + _esc(payload) + '"']
     return ["bool", "1" if payload else "0"]
 
@@ -330,7 +359,7 @@ def _tokenize(line):
     i, n = 0, len(line)
     while i < n:
         c = line[i]
-        if c in " \t":
+        if c in " \t\r":
             i += 1
             continue
         if c == '"':
@@ -348,7 +377,7 @@ def _tokenize(line):
             i = j + 1
         else:
             j = i
-            while j < n and line[j] not in " \t":
+            while j < n and line[j] not in " \t\r":
                 j += 1
             toks.append(line[i:j])
             i = j
@@ -433,11 +462,12 @@ def self_test_samples():
     """
     return [
         ("dt", {"val": 0.016667}),
-        ("asset", {"kind": 0, "id": 1, "w": 2, "h": 2, "data": b"\x00\x01\x02\x03" * 4}),
-        ("asset", {"kind": 1, "id": 2, "w": 640, "h": 480}),
-        ("asset", {"kind": 2, "id": 3, "x": 0.0, "y": 0.0, "w": 16.0, "h": 16.0,
+        ("asset", {"kind": ASSET_KIND_IMAGE, "id": 1, "w": 2, "h": 2,
+                   "data": b"\x00\x01\x02\x03" * 4}),
+        ("asset", {"kind": ASSET_KIND_CANVAS, "id": 2, "w": 640, "h": 480}),
+        ("asset", {"kind": ASSET_KIND_QUAD, "id": 3, "x": 0.0, "y": 0.0, "w": 16.0, "h": 16.0,
                    "sw": 256.0, "sh": 256.0}),
-        ("asset", {"kind": 3, "id": 4, "size": 12.0, "data": b"fake-ttf"}),
+        ("asset", {"kind": ASSET_KIND_FONT, "id": 4, "size": 12.0, "data": b"fake-ttf"}),
         ("ev", {"slot": 0, "type": "keypressed", "src": 0, "args": [("return",), (False,)]}),
         ("call", {"slot": 1, "fn": "hit", "depth": 1, "args": [203.0, 88.0]}),
         ("timer", {"slot": 2, "id": 1}),
