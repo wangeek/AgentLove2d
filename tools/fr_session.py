@@ -86,24 +86,57 @@ def parse_text(text):
     return s
 
 
+def _validate_session(s):
+    """dump 前共享校验（文本/二进制两出口同一口径）；非法 raise SessionError。
+
+    只查头字段域与 entries 结构，不做行级校验（render/encode 的 ValueError
+    由 dump 调用处包装 entry 序号透传）；对合法 Session 无副作用，
+    不改变 canonical 输出（全量回归守护）。
+    """
+    if not (isinstance(s.get("width"), int) and 1 <= s["width"] <= 65535
+            and isinstance(s.get("height"), int) and 1 <= s["height"] <= 65535):
+        raise SessionError("width/height 须为 [1,65535] 整数")
+    if not (isinstance(s.get("sha"), str) and re.fullmatch(r"[0-9a-f]{64}", s["sha"])):
+        raise SessionError("sha 须为 64 位小写十六进制")
+    if s.get("loglvl") not in _LOGLVL:
+        raise SessionError("loglvl 非法 %r" % (s.get("loglvl"),))
+    if not (isinstance(s.get("seed"), int) and 0 <= s["seed"] < (1 << 64)):
+        raise SessionError("seed 须为 [0,2^64) 整数")
+    for no, entry in enumerate(s["entries"]):
+        if not (isinstance(entry, tuple) and len(entry) == 2):
+            raise SessionError("entry %d：须为 (kind, payload) 二元组" % no)
+        kind, payload = entry
+        if kind == "cmnt":
+            if "\r" in payload or "\n" in payload:
+                raise SessionError("entry %d：cmnt 禁含 \\r \\n" % no)
+        elif kind == "frame":
+            for row in payload:
+                if not (isinstance(row, tuple) and len(row) == 2):
+                    raise SessionError("entry %d：frame 元素须为 (op, fields) 二元组" % no)
+        else:
+            raise SessionError("entry %d：kind 非法 %r" % (no, kind))
+
+
 def dump_text(s):
     """Session → canonical 文本（"\\n".join + 尾部单 LF）；cmnt 禁含 \\r \\n。
 
     头部 loglvl 写名字（off|base|full，与 parse_text 校验对称）；
     二进制形态才写数字（见 dump_binary）。
     """
+    _validate_session(s)
     out = ["frb1 %d %d %s %s %d" % (s["width"], s["height"], s["sha"],
                                     s["loglvl"], s["seed"])]
     idx = 0
-    for kind, payload in s["entries"]:
+    for entry_no, (kind, payload) in enumerate(s["entries"]):
         if kind == "cmnt":
-            if "\r" in payload or "\n" in payload:
-                raise SessionError("cmnt 禁含 \\r \\n")
             out.append("cmnt " + payload)
         else:
             out.append("frame %d" % idx); idx += 1
             for op, fields in payload:
-                out.append(_rc.render_line(op, fields))
+                try:
+                    out.append(_rc.render_line(op, fields))
+                except ValueError as e:
+                    raise SessionError("entry %d：%s" % (entry_no, e)) from e
     return "\n".join(out) + "\n"
 
 
@@ -133,7 +166,11 @@ def parse_binary(data):
             if off + n > len(data):
                 raise SessionError("off %d：cmnt 截断（需 %d 字节，余 %d）"
                                    % (off, n, len(data) - off))
-            body = data[off:off + n].decode("utf-8"); off += n
+            try:
+                body = data[off:off + n].decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise SessionError("off %d：cmnt UTF-8 非法" % off) from e
+            off += n
             s["entries"].append(("cmnt", body))
         elif tag == TAG_FRAME:
             n = int.from_bytes(data[off:off + 4], "little"); off += 4
@@ -160,7 +197,6 @@ def _parse_frame_body(body):
     """
     rows, mv, i = [], memoryview(body), 0
     while i < len(body):
-        op = fields = None
         for end in range(2, len(mv) - i + 1):
             try:
                 op, fields = _rc.decode_row(mv[i:i + end])
@@ -176,15 +212,19 @@ def _parse_frame_body(body):
 
 def dump_binary(s):
     """Session → 二进制（header 50B + entries 按 entries 列表序原样重复至 EOF）。"""
+    _validate_session(s)
     out = [MAGIC, bytes([VERSION]),
            s["width"].to_bytes(2, "little"), s["height"].to_bytes(2, "little"),
            binascii.unhexlify(s["sha"]),
            bytes([_LOGLVL[s["loglvl"]]]), s["seed"].to_bytes(8, "little")]
-    for kind, payload in s["entries"]:
+    for entry_no, (kind, payload) in enumerate(s["entries"]):
         if kind == "cmnt":
             b = payload.encode("utf-8")
             out.append(bytes([TAG_CMNT]) + len(b).to_bytes(4, "little") + b)
         else:
-            body = b"".join(_rc.encode_row(op, f) for op, f in payload)
+            try:
+                body = b"".join(_rc.encode_row(op, f) for op, f in payload)
+            except ValueError as e:
+                raise SessionError("entry %d：%s" % (entry_no, e)) from e
             out.append(bytes([TAG_FRAME]) + len(body).to_bytes(4, "little") + body)
     return b"".join(out)

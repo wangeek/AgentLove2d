@@ -65,6 +65,27 @@ def test_binary_errors():
     bad = bytearray(blob); bad[50] = 0x7F
     with pytest.raises(fs.SessionError, match="entry"):
         fs.parse_binary(bytes(bad))
+    # 首 entry 是 cmnt：off 50=tag、51:55=len、55 起为 UTF-8 载荷；坏首字节须
+    # SessionError 化（不得裸抛 UnicodeDecodeError）
+    assert blob[50] == fs.TAG_CMNT
+    bad = bytearray(blob); bad[55] = 0xFF
+    with pytest.raises(fs.SessionError, match="UTF-8"):
+        fs.parse_binary(bytes(bad))
+
+
+def test_dump_validation():
+    """dump 侧共享校验：loglvl/width 非法在文本与二进制两出口都 SessionError。"""
+    s = _sample_session()
+    bad = dict(s); bad["loglvl"] = "x"
+    with pytest.raises(fs.SessionError, match="loglvl"):
+        fs.dump_text(bad)
+    with pytest.raises(fs.SessionError, match="loglvl"):
+        fs.dump_binary(bad)
+    bad = dict(s); bad["width"] = 70000
+    with pytest.raises(fs.SessionError, match="width"):
+        fs.dump_text(bad)
+    with pytest.raises(fs.SessionError, match="width"):
+        fs.dump_binary(bad)
 
 def test_cmnt_rejected_control():
     s = _sample_session()
