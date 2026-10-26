@@ -134,11 +134,11 @@ slembcke 侧（纯 Lua 层的坑与技巧，fr-trace/L0 直接受用）：
 
 已拍板（2026-10-26 用户确认）：① 捕获后回放（视觉真源=IR）；② D8 生效（取代 D6）；③ 项目定位=先建工具链改造创作各类游戏；④ 回放注入默认=严格档；⑤ log=A 主力+B 二批；⑥ §七 开放问题除第 3 条外全部接受（已进 spec v1.2 / cmd.tbl v1.2 / D9）；⑦ sango/GDI 遗产彻底剥离，命令集对照 LÖVE 源码重定。
 
-**待拍板**：仅 §七.3 无头资产创建 API（ImageData CPU 注册 + live 物化，决策因素已给出）。
+**待拍板**：无（§七 十条全部定案，最后一条=语义替代方案，2026-10-26）。
 
 ## 七、开放问题清单（2026-10-26 全案回顾）
 
-**2026-10-26 拍板：除第 3 条（无头资产 API，决策因素见下）外全部接受**，已进 spec v1.2 / cmd.tbl v1.2 / decisions.md D9。下列各条保留为决策记录。
+**2026-10-26 拍板：全部十条均已定案**——第 3 条（无头资产 API）定案为**语义替代**：A 类创建 API 保留原名原签名，fork 内实现整体替换为 CPU 侧资产注册（校验实参→登记→返回资产代理），内核代码保持地道 LÖVE 写法；渲染端 = C 解析 FR 流后的 OpenGL 调用（经引擎 Graphics 层）。详见 D8-5 与下方附件。下列各条保留为决策记录。
 
 **会阻断首批实现的：**
 
@@ -157,6 +157,31 @@ slembcke 侧（纯 Lua 层的坑与技巧，fr-trace/L0 直接受用）：
 10. **几何固定**：header 几何由内核声明且不可变；resize 只作事件记录不改 header（v1 亦可禁 resize）。
 
 **已在待拍板轨道的旧三件**（不重复展开）：回放注入默认档（推荐严格）；log=A 主力+B 二批；fr-spec v1.2 候选清单（§0 生产者、dt 进帧头、ev source 标记、注入语义 + 上列 6/7/9/10）。
+
+### §七.3 附件：GL 依赖面清单（2026-10-26 源码取证，wrap_Graphics.cpp `luax_checkgraphicscreated` 守卫全集）
+
+**A. GPU 资产创建——内核禁直调，由 fr 注册接管**（13 项，行号=守卫调用处）：
+
+| 类 | API | 行号 |
+|---|---|---|
+| 纹理 | newImage / newCubeImage / newArrayImage / newVolumeImage | :1005 / :774 / :868 / :932 |
+| 目标 | newCanvas | :1189 |
+| 字体 | newFont / newImageFont / newText | :1088 / :1116 / :1644 |
+| 批次/几何 | newMesh / newSpriteBatch / newParticleSystem | :1622 / :1146 / :1170 |
+| 视频 | newVideo | :1666 |
+| 着色器 | newShader（经 getShaderSource 守卫） | :1264 |
+
+**B. 纯数据但被同一守卫拦住的例外**：`newQuad`（:1041）——Quad 是纯几何（:1078 只做 `newQuad(v, sw, sh)`，无 GPU 资源），只因走 Graphics 实例被拦。处置：**quad 作为 asset 行数据注册（x,y,w,h+总宽总高），内核根本不需要调 newQuad**，渲染端物化时自己造——正好落在我们已有的资产模型里。
+
+**C. 渲染期调用**（draw/print/clear/setCanvas/setScissor/…）：capture-then-replay 已覆盖，内核模式下被捕获层接住不执行，不单列。
+
+**D. CPU 侧放行的原料层**：`love.image.newImageData`、`love.font.newTrueTypeRasterizer` / `newImageRasterizer`（FreeType/字模光栅化全在 CPU，font 模块不依赖 graphics）、`love.math`、`love.filesystem`——内核可直用。
+
+**E. 回读/截图（渲染端专用，内核禁）**：`Canvas:newImageData`、`love.graphics.captureScreenshot`（D10：旁车数据）。
+
+**F. 窗口/上下文（框架所有，内核禁）**：`love.window.setMode` 等。
+
+处置规则〔定案：语义替代而非禁用，D8-5〕：A 类在 fork 中保留原名原签名，实现替换为 CPU 侧注册（校验实参 → 登记 asset 行 → 返回资产代理对象，代理携带 u32 资产号供 draw 捕获时解析）；newQuad 一并去守卫化（纯数据注册，内核根本不用调也行——quad 本就是 asset 行数据）；B 类不接管、数据行化；无 IR 对应的 A 类成员（newShader/newVideo/newMesh 等）暂记 err 行，按频度增补。live 与 headless 共用同一替代实现，差异只在渲染端有无 GL；渲染端物化 = 首次引用时 uploadImageData。
 
 ## 附录：v1 仍成立的事实
 

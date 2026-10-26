@@ -60,10 +60,36 @@ present()              ← end 段（s_crc + d_crc）
 - `CALL` = `love.handlers["x"](...)` 直接调用（栈帧增长）；`push` = 队尾追加——SendMessage / PostMessage 的 lowering 对照在 LÖVE 里看得见摸得着。
 - 自定义事件：`love.event.push(任意键名, args...)` + `love.handlers[键名] = fn` 注册；回放脚本注入走同一条路。
 
-## 拓扑两种（流格式不变，传输层可换——双形态原则）
+## 流的载体与调用链（D8 定稿后拓扑）
 
-- **A 同进程双线程**：无头内核进 `love.thread`，Channel 传帧包。快、简单、调试容易。
-- **B 双进程 / 跨机**：stdin / socket / 串口吃同一份流。更接近最终设备形态。
+同进程时流不离开 C 内存：**帧缓冲就是流本身**，文件与 socket 都是它的 tee 投影——屏幕、文件、网络消费同一份字节（单流双消费者，屏幕路径=文件路径，"视觉真源=IR"由此成立）。
+
+拓扑 A 调用链（live 模式，同进程）：
+
+```
+内核 Lua：love.graphics.draw(tex, 12.0, 34.0)
+  ↓ Lua→C 边界（唯一跨语言点）
+w_draw 捕获替代层（fr-gen 生成编码胶水）
+  ↓ C codec 编码（字节与 .frb 完全一致）
+帧缓冲 out 区追加一行
+  …同帧：pump 捕获 in 行 / rngc / present 时 A 方案 diff 出 st+s_crc…
+present()（自有 run loop）封帧
+  ├─ tee₁ → session 文件（.frb 追加，录制开关控制）
+  └─ tee₂ → fr_replayer_frame(buf, len)   ← C→C 同进程直调
+       ↓ 同一 C codec 解码 → 行分发
+       draw 行 → 资产号首次物化（uploadImageData）→ Graphics::draw → OpenGL
+swap buffers → 屏幕更新（present 收尾）
+```
+
+三种拓扑的载体：
+
+| 模式 | 载体 | 说明 |
+|---|---|---|
+| A live（默认） | C 帧缓冲 + tee | present 时同步回放，无队列积压；录制开=加 tee₁ |
+| B 跨进程（回放工具/外部渲染器/对拍/设备端） | `.frb` 文件（离线）或 socket 字节块（在线） | 线上协议：session header 块一次 + 逐帧 `[len][bytes]`（细节随 fr-gen）；纯 Lua 契约证人与未来设备瘦客户端吃同一格式 |
+| C 无头录制 | `.frb` 文件 | null Graphics，只 tee₁ 不回放；捕获路径与 A 完全同一份 |
+
+要点：内核零接触流（只见 Lua API，编码封帧落盘回放全在 C）；观察 VM 按需订阅（fr-trace 审计）；跨进程 socket 的背压属传输层（Wayland damage/背压先例），不进语义；worker 线程产物回主线程仍走 Channel 且只传字节块（防第二编解码实现）。
 
 ## 已知劣势与对策
 
