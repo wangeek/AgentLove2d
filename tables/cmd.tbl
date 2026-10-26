@@ -11,7 +11,9 @@
 #
 # 列: op <TAB> section <TAB> signature <TAB> source <TAB> status <TAB> notes
 # status: sealed=语义封版（字节签名随 fr-gen） | draft=机制待实现定稿
-# DSL: 字段为 "名 类型" 序对；类型 u8/u32/f32/f64/rgba8/str/pts/variant（f32[]为pts别名）；末位可变长 args...（u8 argc + variant*argc）；asset 行 payload... 按 kind 分支
+# DSL: 字段为 "名 类型" 序对；类型 u8/u32/f32/f64/rgba8/str/variant/f32[]（点列；f64 亦作 variant 数值载荷）；末位可变长 args...（u8 argc + variant*argc）；asset 行 payload... 按 kind 分支
+# freq 取证源: love2d/love-src 克隆的 origin/main:testing/tests/*.lua（21 文件；11.5 tag 无 testing 目录——复原克隆后需额外 fetch origin main 才能重跑）
+# freq 复现: git -C love2d/love-src ls-tree --name-only origin/main:testing/tests 列文件，逐个 git show origin/main:testing/tests/<f> 管道 Select-String 'love\.graphics\.(draw|print|printf|rectangle|line|polygon|circle|arc|points|clear|setCanvas|setScissor)\b' 分组计数
 #
 # v1.2 退役条目（sango/GDI 遗产，勿复用其名）:
 #   spr/txt/fill/blt/lut → 由 draw/print/rect/.../rt 对照现代 API 取代
@@ -19,7 +21,7 @@
 #   rng（帧头种子行）→ 初始种子进 session header，帧内变动由 rngc 记录
 #
 op	section	signature	source	status	notes
-dt	head	value f32	run loop（love.timer.step 产出）	sealed	回放喂记录值；内核禁读墙钟（lint: love.timer.getTime/os.clock/os.time）
+dt	head	val f32	run loop（love.timer.step 产出）	sealed	回放喂记录值；内核禁读墙钟（lint: love.timer.getTime/os.clock/os.time）
 asset	head	kind u8 id u32 payload...	newImageData/newQuad/newFont/newCanvas 注册点（w_ 边界）	draft	运行中注册资产；frame 0 checkpoint 全量重发。payload: image=RGBA8字节+宽高 / canvas=宽高 / quad=x,y,w,h+总宽总高 / font=字体字节+字号f32
 ev	in	slot u32 type str src u8 args...	Event::pump→convert 造 Message（sdl/Event.cpp:178）；w_push（wrap_Event.cpp:75）	sealed	签名=love.event.push 参数序（handlers 键名全集）；src: 0=OS 1=合成 2=自定义；合成事件回放重算对拍（严格注入默认档）
 call	in	slot u32 fn str depth u8 args...	run loop 分发循环（CALL=直接函数调用=栈帧增长）	sealed	同步嵌套记深度；分发中 push 落下一帧快照
