@@ -80,8 +80,8 @@ frames  = 帧包序列（frame 0 = checkpoint 基线，见 §4）
 ## 6. 双形态与文本语法
 
 - 文本 `.fr` / 二进制 `.frb`，round-trip **逐字节相等**；CMNT 行保注释不丢。
-- 字节级布局、变长编码、字符串池/键池〔定稿中〕随 fr-gen 首版封版。
-- 行级文本语法**示意稿**（非封版，示意语义用）：
+- 行级字节/文本编码已随 fr-gen 首版封版（§6.1，B0）；变长编码、字符串池/键池不进行级 v1（定宽编码 + 内联 str）；帧级/会话级封装布局〔定稿中〕归 B1。
+- 行级文本语法**示意稿**（非封版，示意语义用；**示意稿已由实测形态取代，见 §6.1/§6.2**）：
 
 ```
 cmnt demo session
@@ -102,6 +102,29 @@ frame 1
     print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
   end
   s_crc 0x9c27f41b d_crc 0x51e0aa93
+```
+
+### 6.1 行级编码〔封版〕
+
+- 数值域：所有 f32/f64 写入前量化到 %.6f 语义域（`qf`）；NaN/Inf 拒收；±0.0 位型互异保留（-0.000000 / 0.000000）
+- 二进制（小端）：u8/u32 整数；f32/f64 IEEE；rgba8=r,g,b,a 四字节；str=u32 字节数+UTF-8（二进制侧容纳任意 UTF-8 字节，含控制字符）；f32[]=u32 点数 n+n×2 个 f32；variant=u8 tag+载荷（命名常量 `VARIANT_TAG_NUM/STR/BOOL = 1/2/3`；num 载荷 f64 量化、str 同 str 规则、bool 载荷 f64 0/1）；args...=u8 argc+argc×variant；opcode=u8=cmd.tbl 数据行序（0x00 起）；结构行保留 0xFF=CMNT
+- asset 行 payload 按 kind 分支（命名常量 `ASSET_KIND_IMAGE/CANVAS/QUAD/FONT = 0/1/2/3`）：image={u32 w, u32 h, u32 len, 字节}；canvas={u32 w, u32 h}；quad={6×f32}；font={f32 size, u32 len, 字节}
+- 解码侧错误族：截断/坏 tag/坏 kind/残尾一律 ValueError 含 op 与偏移
+- **文本 canonical〔封版〕**：LF 行尾、无行尾空白、行=空格分隔 token；f32/f64 恒 %.6f；整数十进制；rgba8 四整数；str=双引号包裹，转义集 `\\ \" \n \r \t`，**其余 C0（U+0000–U+001F）与 U+2028/U+2029 在文本 render 侧拒收**（行完整性——splitlines 也切 U+2028）；二进制侧不拒（行完整性仅文本侧约束）；variant 文本形态 `num <%.6f>` / `str "<quoted>"` / `bool 0|1`；args...=argc 十进制+argc 个 variant token
+- 指纹 = sha256(规范表)：数据行 `op\tsection\tsignature` 逐行 join("\n")+"\n"（UTF-8），忽略 source/status/notes——改注释与备注不破指纹
+- 帧级与会话级封装布局**未在 B0 封版**，归 B1（fr-as/fr-dis 落地时定：session header 字段序、帧定界、CMNT 行在封装中的位置）；asset 行文本规范形同归 B1（B0 生成物 render/parse 两侧 NotImplementedError 占位）
+
+### 6.2 实测样例行
+
+引自 `tools/fr_codec_gen.py` 的 render 实测输出，替代旧示意稿。注意 ev/call 的 src/depth 字段在 args **前**（旧示意稿"src=/depth= 后缀"写法已废）：
+
+```
+dt 0.016667
+ev 0 "keypressed" 0 2 str "return" bool 0
+call 1 "hit" 1 2 num 203.000000 num 88.000000
+st 7 "hp" num 84.000000
+draw 1 3 34.000000 56.000000 0.000000 -1.000000 1.000000 0.000000 0.000000 255 255 0 255
+print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 ```
 
 ## 7. 命令集〔v1.2 对照 LÖVE 11.5 源码定稿〕
@@ -142,9 +165,9 @@ frame 1
 
 ## 12. 取证清单
 
-1. **首版实收频度**：love-src/testing 测试套件的绘制调用统计 → cmd.tbl 实收顺序与优先级（第一个"原版"就是宿主自己的测试）。
+1. **首版实收频度**：love-src/testing 测试套件的绘制调用统计 → cmd.tbl 实收顺序与优先级（第一个"原版"就是宿主自己的测试）。**已取证**（2026-10-27，数字在 cmd.tbl notes，取证源与复现命令固化在表头注释）；printf 收录判定随 B1。
 2. `printf`（含 wrap/align）、`points` 多色、`SpriteBatch` / `Mesh` / Shader 的收录时机——按实验内核实收频度增删。
-3. **无头资产创建 API 面**（ImageData 注册 + live 物化）——定稿中，见 love2d-gap.md §七.3。
+3. **无头资产创建 API 面**（ImageData 注册 + live 物化）——**已定案**：语义替代方案（D8-5，同名原签名、CPU 注册实现），非取证项（见 love2d-gap.md §七.3）。
 4. A 方案"表重建事件"（rehash → 整表重发）的实现细节与 st 行噪声实测。
 
 ## 13. 版本记录
@@ -152,3 +175,4 @@ frame 1
 - **v1.0**（2026-10-26，会话内）：初稿。五段之第三段名 `proc`；full 级含模块分类。
 - **v1.1**（2026-10-26，封版）：`proc` → `log`；级别收敛纯三档，去生产端模块分类；err 行豁免于 off 级；读取侧筛选不进格式。
 - **v1.2**（2026-10-26，修订）：**sango/GDI 遗产彻底剥离**（gdi_map.tsv 退役删除；lowering 归未来前端私仓）；**命令集对照 LÖVE 11.5 源码重定**（spr/txt/fill/blt/lut/loop/rng 退役；新增 clear/draw/print/rect/line/poly/circle/arc/points/rt/scissor/dt/asset）；并入口径：dt 进帧头、frame 0=checkpoint、错误帧语义、loglvl 会话内不可变、几何固定、回放注入默认严格档、math.random boot 归一 love.math、内核禁直读输入状态。频度准则的"原版"改指宿主：首版 = love-src/testing 调用统计。
+- **v1.2.1**（2026-10-27，B0）：行级字节/文本编码随 fr-gen 首版封版（%.6f 量化域、小端、opcode=表行序、0xFF=CMNT、variant/asset 口径常量命名锚、文本转义集含 \r 且 C0/U+2028/2029 文本侧拒收、指纹=规范表 sha256）；帧级/会话级封装与 asset 文本规范形归 B1。频度取证完成（源=origin/main:testing/tests，11.5 tag 无 testing 目录），数字入 cmd.tbl notes；printf freq=4 已取证、收录判定随 B1 实收复核。

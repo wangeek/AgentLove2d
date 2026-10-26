@@ -84,7 +84,7 @@
 | log A 方案（主力） | LuaJIT gc.root 全对象链 + 影子副本 TValue memcmp→脏槽位出 st 物理行，同次遍历产 s_crc；rehash 检出→表重建事件（整表重发，checkpoint 同语义）；full 级专用，off/base 不碰堆 | D9-4、gap §四 |
 | log B 方案（二批） | TSET 字节码 handler + trace store IR 插桩，O(变动数) 真 WAL；A 的 profiling 证明超帧预算才启动 | gap §四 |
 | 登记表与逻辑解码 | 对象→路径映射；登记项=(指针, epoch, 首现帧, 末见帧) 防 GC 指针复用；checkpoint 全量重推校正；消费端 fr-dis 解析成路径文本（DWARF 同构；debugvar.h 路径描述符与键池先例） | gap §四、refs/luadebug |
-| fr-gen | cmd.tbl → C（编进引擎）+ Python（工具族）双目标；sha256 指纹写 session header；生成代码不手改 | spec §9 |
+| fr-gen | cmd.tbl → C（编进引擎）+ Python（工具族）双目标；sha256 指纹写 session header；生成代码不手改；双目标已落（B0：Python 全功能编解码、C API 面+口径常量锚+extern C；字段级 emit 归 B1 与 Python 共用字节布局回归） | spec §9 |
 | 流载体 | 拓扑 A（默认）：C 帧缓冲 + tee，present 同步回放；拓扑 B：`.frb` 文件（离线）或 socket `[len][bytes]`（在线）；拓扑 C：无头录制只 tee₁（null Graphics）。跨进程协议细节随 fr-gen | renderer 文档 |
 | 回放器 | C 解码→Graphics::draw 系（与 w_draw 同入口）；物化=资产号首次引用时 uploadImageData；mipmap/sRGB 按 D10 旋钮 | renderer 文档 |
 
@@ -109,8 +109,8 @@
 
 | 批 | 范围 | 验收线（判据形式） |
 |---|---|---|
-| B0 | cmd.tbl 终表（首版频度 = love-src/testing 调用统计）+ fr-gen C/Python 双目标 | 生成代码可编译、可导入；同表 sha256 指纹可复现 |
-| B1 | round-trip 回归（pytest 进仓） | `.fr`→`.frb`→`.fr` 逐字节相等（含 CMNT、err 行） |
+| B0 | cmd.tbl 终表（首版频度 = love-src/testing 调用统计）+ fr-gen C/Python 双目标 | 生成代码可编译、可导入；同表 sha256 指纹可复现 ✅ 已完成（2026-10-27，cb7058e→13690a6：表终表化、双目标生成器、零漂移守卫、跨目标常量锚；28 passed + 1 skipped，gyl gcc -Werror 编译通过） |
+| B1 | round-trip 回归（pytest 进仓）；帧/会话封装布局、asset 文本规范形、C 字段级 emit | `.fr`→`.frb`→`.fr` 逐字节相等（含 CMNT、err 行） |
 | B2 | fr-as / fr-dis / fr-dump / fr-check 最小面 | 样例流 dump 锚行可 grep；判据脚本通过 |
 | B3 | L0 纯 Lua 产流：代理 shim + 排干快照 run loop + 状态走查器（st 语义样机） | 产出五段齐全会话文件；fr-dis 可读；fr-check 通过 |
 | B4 | L1 魔改首批：捕获接入 + 资产语义替代四件套（newImage/newCanvas/newFont/newQuad）+ C 回放器 + null Graphics | capture-then-replay 首帧上屏；同流文件经拓扑 B 离线回放与同进程屏幕 d_crc 一致 |
