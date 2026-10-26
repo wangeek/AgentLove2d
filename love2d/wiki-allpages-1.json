@@ -1,0 +1,115 @@
+
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+  <title>Access Denied | 403</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8549247415463520"
+     crossorigin="anonymous"></script>
+  <style>
+      :root {
+          --cf-orange: #f68b1f;
+          --cf-blue: #0051ad;
+          --cf-red: #bd2424;
+          --text-dark: #313131;
+          --text-light: #666;
+          --border-gray: #d9d9d9;
+      }
+      body {
+          font-family: -apple-system, system-ui, "Segoe UI", Roboto, Oxygen, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+          margin: 0; padding: 0; color: var(--text-dark); background-color: #fff; line-height: 1.5;
+      }
+      .cf-wrapper { width: 90%; max-width: 1000px; margin: 0 auto; padding: 40px 0; }
+      .cf-header { border-bottom: 1px solid var(--border-gray); padding-bottom: 20px; margin-bottom: 40px; }
+      .cf-error-code { font-size: 48px; font-weight: 300; margin: 0; color: var(--cf-red); }
+      .cf-error-title { font-size: 24px; font-weight: 400; margin: 5px 0 0 0; color: var(--text-light); }
+  
+      .cf-status-display { display: flex; justify-content: space-between; align-items: center; margin: 40px 0 60px 0; text-align: center; }
+      .cf-status-item { flex: 1; }
+      .cf-status-item i { display: block; font-size: 40px; margin-bottom: 10px; font-style: normal; }
+      .cf-status-label { font-weight: bold; font-size: 15px; }
+      .cf-status-sub { color: var(--text-light); font-size: 13px; margin-top: 4px; }
+      .cf-status-ok { color: #2ecc71; }
+      .cf-status-error { color: #e74c3c; }
+  
+      .cf-status-line { height: 2px; flex: 1; background: #eee; margin: 0 10px; position: relative; top: -22px; }
+      .cf-line-ok { background: #2ecc71; }
+      .cf-line-error { background: #e74c3c; }
+  
+      .cf-columns { display: flex; gap: 40px; margin-bottom: 30px; }
+      .cf-column { flex: 1; }
+      .cf-column h2 { font-size: 20px; font-weight: 600; margin-top: 0; }
+      .cf-column p { font-size: 15px; color: var(--text-light); }
+  
+      .cf-button-container { margin-bottom: 40px; }
+      .btn-home {
+          display: inline-block; padding: 10px 20px; background-color: transparent; border: 1px solid var(--cf-blue);
+          color: var(--cf-blue); text-decoration: none; font-size: 15px; border-radius: 4px; font-weight: 500; transition: all 0.2s;
+      }
+      .btn-home:hover { background-color: var(--cf-blue); color: #fff; }
+  
+      .cf-footer { border-top: 1px solid var(--border-gray); padding-top: 20px; color: var(--text-light); font-size: 13px; }
+      .cf-ray-info { margin-top: 8px; font-family: monaco, courier, monospace; color: #999; }
+      @media (max-width: 768px) {
+          .cf-columns { flex-direction: column; }
+          .cf-status-display { transform: scale(0.8); margin: 20px 0; }
+      }
+  </style>
+  </head>
+  <body>
+  <div class="cf-wrapper">
+      <div class="cf-header">
+          <h1 class="cf-error-code">Error 403</h1>
+          <p class="cf-error-title">Access Denied</p>
+      </div>
+  
+      <div class="cf-status-display">
+          <div class="cf-status-item">
+              <i>💻</i>
+              <div class="cf-status-label">You</div>
+              <div class="cf-status-sub cf-status-ok">Browser Working</div>
+          </div>
+          <div class="cf-status-line cf-line-ok"></div>
+          <div class="cf-status-item">
+              <i>🛡️</i>
+              <div class="cf-status-label">Cloudflare WAF</div>
+              <div class="cf-status-sub cf-status-error">Blocked</div>
+          </div>
+          <div class="cf-status-line cf-line-error"></div>
+          <div class="cf-status-item">
+              <i>🖥️</i>
+              <div class="cf-status-label">Host</div>
+              <div class="cf-status-sub cf-status-error">Disconnected</div>
+          </div>
+      </div>
+  
+      <div class="cf-columns">
+          <div class="cf-column">
+              <h2>What happened?</h2>
+              <p>Your request was flagged by our security automated system. This could be due to suspicious activity, high-frequency requests, or an invalid browser signature.</p>
+          </div>
+          <div class="cf-column">
+              <h2>What can I do?</h2>
+              <p>Please disable any aggressive VPNs or proxy tools. If you are a regular user, try refreshing the page or contacting the administrator.</p>
+          </div>
+      </div>
+  
+      <div class="cf-button-container">
+          <a href="/" class="btn-home">Try Again</a>
+      </div>
+  
+      <div class="cf-footer">
+          <p>
+              <strong>Your IP:</strong> 219.140.221.26 &bull; 
+              <strong>Feedback:</strong> <a href="mailto:support@gh-proxy.com">support@gh-proxy.com</a> &bull;
+              Performance & security by Cloudflare
+          </p>
+          <div class="cf-ray-info">
+              Cloudflare Ray ID: <span>a2a899826da38e13-SIN</span>
+          </div>
+      </div>
+  </div>
+  </body>
+  </html>
+    

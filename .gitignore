@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# LÖVE Windows 运行时二进制（体积大、可再获取，不入库）
+love2d/love-11.5-win64/
+love2d/love-11.5-win64.zip
+
+# 第三方参考仓库（借鉴用，不入库）
+refs/
+
+# LÖVE 官方源码克隆（嵌套 git 仓库，不入库）
+# 复原：git clone --depth 1 https://github.com/love2d/love.git && git checkout 11.5（锁定 commit 6eb8d54）
+love2d/love-src/
