@@ -104,7 +104,7 @@ def _run_checks(lines, directives):
                              % (p, pno, hit + 1))
         pending_not = []
         if found is None:
-            if kind == "NEXT":
+            if kind == "CHECK-NEXT":
                 fails.append("%s: %s（判据第 %d 行）— dump 第 %d 行未含该续行"
                              % (kind, pat, src_no, cursor + 1))
             else:

@@ -100,3 +100,12 @@ def test_idempotency_fail(tmp_path):
     r = _run(str(f))
     assert r.returncode == 1
     assert "幂等".encode("utf-8") in r.stdout + r.stderr
+
+
+def test_next_fail_message_precise(tmp_path):
+    # NEXT 失败必须报"第 N 行未含该续行"（非"全文未命中"）——锁死失败消息分支
+    cf = tmp_path / "checks.txt"
+    cf.write_text("CHECK-NEXT: draw 1 3\n", encoding="utf-8")   # dump 第 1 行是头行，必不命中
+    r = _run(GOLD_FR, str(cf))
+    assert r.returncode == 1
+    assert "第 1 行未含该续行".encode("utf-8") in r.stderr
