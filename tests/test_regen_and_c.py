@@ -35,7 +35,11 @@ def test_c_api_face():
     assert tbl.tbl_sha256(ROWS) in H
     for i, r in enumerate(ROWS):
         assert "FR_OP_%s = 0x%02X" % (r["op"].upper(), i) in H
-        assert "int fr_encode_%s(fr_buf *b);" % r["op"] in H
+        if r["op"] == "asset":  # asset 四合一，C 侧拆四具名函数
+            for kind in ("image", "canvas", "quad", "font"):
+                assert "int fr_encode_asset_%s(" % kind in H
+        else:
+            assert "int fr_encode_%s(" % r["op"] in H
     assert "FR_OP_CMNT = 0xFF" in H
 
 
@@ -54,8 +58,9 @@ def test_c_compile_smoke(tmp_path):
     cc = shutil.which("gcc") or shutil.which("clang")
     if not cc:
         pytest.skip("no C compiler on PATH")
-    r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror", "-c",
-                        os.path.join(_ROOT, "render", "fr_codec.c"),
-                        "-o", str(tmp_path / "fr_codec.o")],
-                       capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    for name in ("fr_codec.c", "fr_selftest.c"):  # 两个生成 TU 都须零警告过 -Werror
+        r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror", "-c",
+                            os.path.join(_ROOT, "render", name),
+                            "-o", str(tmp_path / (name + ".o"))],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
