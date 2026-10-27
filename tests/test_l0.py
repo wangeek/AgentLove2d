@@ -193,3 +193,25 @@ def test_demo_deterministic(tmp_path):
     _run_demo_session(b)
     with open(a, "rb") as fa, open(b, "rb") as fb:
         assert fa.read() == fb.read()
+
+
+# ---------------- Task 4：golden 固化（入库产物三重校验） ----------------
+
+def test_golden_l0_session(tmp_path):
+    gold = os.path.join(_ROOT, "tests", "golden", "l0_session.fr")
+    raw = open(gold, "rb").read()
+    # ① fr-check 通过
+    r = subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_check.py"), gold],
+                       capture_output=True, cwd=_ROOT)
+    assert r.returncode == 0, r.stderr
+    # ② fr-as→fr-dis 双向逐字节
+    frb = tmp_path / "g.frb"; back = tmp_path / "g.back.fr"
+    assert subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_as.py"), gold, "-o", str(frb)],
+                          capture_output=True, cwd=_ROOT).returncode == 0
+    assert subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_dis.py"), str(frb), "-o", str(back)],
+                          capture_output=True, cwd=_ROOT).returncode == 0
+    assert back.read_bytes() == raw
+    # ③ 内容锚：五段 op 全在场（dt/asset/ev/call/st/s_crc/d_crc）
+    text = raw.decode("utf-8")
+    for tok in ("frame 0", "dt ", "asset image", "ev 0", "call ", "st 0 ", "s_crc ", "d_crc "):
+        assert tok in text, tok
