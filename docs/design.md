@@ -86,6 +86,7 @@
 | 登记表与逻辑解码 | 对象→路径映射；登记项=(指针, epoch, 首现帧, 末见帧) 防 GC 指针复用；checkpoint 全量重推校正；消费端 fr-dis 解析成路径文本（DWARF 同构；debugvar.h 路径描述符与键池先例） | gap §四、refs/luadebug |
 | fr-gen | cmd.tbl → C（编进引擎）+ Python（工具族）双目标；sha256 指纹写 session header；生成代码不手改；双目标已落（B0：Python 全功能编解码、C API 面+口径常量锚+extern C；字段级 emit **顺延 B3**——B1 未含，显式记账） | spec §9 |
 | 流载体 | 拓扑 A（默认）：C 帧缓冲 + tee，present 同步回放；拓扑 B：`.frb` 文件（离线）或 socket `[len][bytes]`（在线）；拓扑 C：无头录制只 tee₁（null Graphics）。跨进程协议细节随 fr-gen。跨进程线上协议 = FRB1 会话流（B1 封版）的逐块读取。 | renderer 文档 |
+| 相机（结算器） | 相机 = 内核状态（st/checkpoint）+ 结算参数，协议零新增；多相机/视口 = rt + scissor + canvas 资产 + draw 合成（行序即 depth）；shim 变换栈就地结算；判据 = 世界层不变性；观战自由视角/双流归 v2 显式演进 | D11 |
 | 回放器 | C 解码→Graphics::draw 系（与 w_draw 同入口）；物化=资产号首次引用时 uploadImageData；mipmap/sRGB 按 D10 旋钮 | renderer 文档 |
 
 ## 5. 工具族地图
