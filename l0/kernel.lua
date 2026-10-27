@@ -20,4 +20,20 @@ function kernel.draw(g)
     g.rectangle(0, 0.0, 0.0, 640.0, 480.0, 0.0, 0.0, 1.0, 255, 0, 0, 255)
 end
 
+-- Task 3：事件处理器表（run loop 分发直调）。处理器首参 em = runner 注入的
+-- CALL 行记录器：em(fn, depth, raw_args) 记同步直调（slot 取帧内 in 段流水号）。
+function kernel.on_key(key)
+    -- banner 可被 walker st 行观察——CALL 链的状态效果由此进入 log 段
+    kernel.state.banner = "KEY:" .. key
+end
+
+kernel.handlers = {
+    -- 演示一层 CALL：keypressed 直调另一处理器 on_key（CALL 行 depth=1）
+    keypressed = function(em, key, scancode, isrepeat)
+        em("on_key", 1, { key, scancode, isrepeat })
+        kernel.on_key(key)
+    end,
+    -- quit 无处理器：runner 见 quit 事件在本帧闭合后终止循环
+}
+
 return kernel
