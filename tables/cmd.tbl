@@ -40,5 +40,5 @@ arc	out	mode u8 arctype u8 x f32 y f32 r f32 a1 f32 a2 f32 seg u32 color rgba8	l
 points	out	pts f32[] size f32 color rgba8	love.graphics.points（:3010）	sealed	freq=3
 rt	out	target u32	love.graphics.setCanvas（:2933）	sealed	0=屏幕，否则 canvas 资产号；out 段为有序流，rt 行切换目标；canvas 间合成=draw 引用 canvas 资产 freq=122
 scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7
-s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和
-d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量
+s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B3b 样机口径=CRC32(st 行文本)（spec §13 v1.2.3，B6 换 A 方案）
+d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量；B3b 样机口径=CRC32(out 行文本)

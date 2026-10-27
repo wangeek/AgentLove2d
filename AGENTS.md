@@ -6,7 +6,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 
 - `docs/design.md` — **总纲入口**：系统全貌、一帧的一生、机制卡、工具族地图、实施路线——新会话从这里进，再按其 §0 读者地图跳真源
 - `docs/fr-spec.md` — FR 规格 v1.2（封版）：段语义、级别三档、命令集、事件词汇表、工具族、取证清单
-- `docs/decisions.md` — 架构决策 D1–D7：LLVM 模式总则、语义四准则、验证两律、树不进协议、语境纪律、LÖVE 定位
+- `docs/decisions.md` — 架构决策 D1–D11：LLVM 模式总则、语义四准则、验证两律、树不进协议、语境纪律、LÖVE 定位、魔改宿主架构（D8）、sango 剥离（D9）、GPU 边界（D10）、相机归属（D11）
 - `docs/love2d-gap.md` — 魔改设计与差距分析 v2：六个挂点、绘制层（引擎内 C 回放 + 捕获后回放）、事件层（C 捕获/注入 + 自有 run loop）、log（API 边界记录，debug 栈钩仅审计）
 - `tables/cmd.tbl` — 命令表 = 单一真源；两端编解码代码从它生成，**不许手写编解码**
 
@@ -15,7 +15,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - IR 词汇表只用现代语义（f32 `%.6f`、RGBA8、TTF 字体字节、HID scancode、UTF-8），宿主 = LÖVE，它的事件名/像素格式/字体管线就是普通话；**legacy 方言（GDI / WM_ / VK_ / 调色板 / 点阵）不进本仓库**，未来前端的兼容映射住前端自己的仓库
 - 判据只许"符号比较"（锚行 diff）或"字节相等"；墙钟时间只进注释列
 - 规格条目状态：sealed 不擅改；draft 待 fr-gen 首版落定；待取证项先取证再定
-- 内核与渲染端的唯一通道是 FR 流，内核不得读渲染端状态（D8〔待拍板〕取代 D6，见 docs/decisions.md）
+- 内核与渲染端的唯一通道是 FR 流，内核不得读渲染端状态（D8 生效，取代 D6，见 docs/decisions.md）
 - 工具命名不与现成 shell 命令撞语义
 - 修改规格 = 改 `docs/fr-spec.md` + 在其 §13 版本记录追加一行；决策修订 = 在 `docs/decisions.md` 追加新条目注明取代关系
 
@@ -34,7 +34,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - `docs/` — 规格真源与决策台账（中文）
 - `tables/` — `cmd.tbl`（IR 单一真源，命令集 v1.2 对照 LÖVE 11.5 源码定稿）
 - `tools/` — fr-* 工具族（Python；C 编解码由 fr-gen 生成）
-- `render/` — LÖVE 渲染端（Lua）
+- `render/` — fr-gen 生成的 C 编解码落位（fr_codec.h/.c + fr_selftest.c 跨架构字节自测）；L0 产流原型在 `l0/`
 - `tests/` — round-trip 回归、对拍
 - `love2d/` — LÖVE 11.5 素材（win64 运行时 / 官方 11.5 源码 / wiki dump；运行时二进制不入 git；**源码必须与锁定运行时同版本**）
 
