@@ -80,7 +80,7 @@ frames  = 帧包序列（frame 0 = checkpoint 基线，见 §4）
 ## 6. 双形态与文本语法
 
 - 文本 `.fr` / 二进制 `.frb`，round-trip **逐字节相等**；CMNT 行保注释不丢。
-- 行级字节/文本编码已随 fr-gen 首版封版（§6.1，B0）；变长编码、字符串池/键池不进行级 v1（定宽编码 + 内联 str）；帧级/会话级封装布局〔定稿中〕归 B1。
+- 行级字节/文本编码已随 fr-gen 首版封版（§6.1，B0）；变长编码、字符串池/键池不进行级 v1（定宽编码 + 内联 str）；帧级/会话级封装已封版（§6.3，见 §13 v1.2.2）。
 - 行级文本语法**示意稿**（非封版，示意语义用；**示意稿已由实测形态取代，见 §6.1/§6.2**）：
 
 ```
@@ -186,3 +186,4 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 - **v1.2**（2026-10-26，修订）：**sango/GDI 遗产彻底剥离**（gdi_map.tsv 退役删除；lowering 归未来前端私仓）；**命令集对照 LÖVE 11.5 源码重定**（spr/txt/fill/blt/lut/loop/rng 退役；新增 clear/draw/print/rect/line/poly/circle/arc/points/rt/scissor/dt/asset）；并入口径：dt 进帧头、frame 0=checkpoint、错误帧语义、loglvl 会话内不可变、几何固定、回放注入默认严格档、math.random boot 归一 love.math、内核禁直读输入状态。频度准则的"原版"改指宿主：首版 = love-src/testing 调用统计。
 - **v1.2.1**（2026-10-27，B0）：行级字节/文本编码随 fr-gen 首版封版（%.6f 量化域、小端、opcode=表行序、0xFF=CMNT、variant/asset 口径常量命名锚、文本转义集含 \r 且 C0/U+2028/2029 文本侧拒收、指纹=规范表 sha256）；帧级/会话级封装与 asset 文本规范形归 B1。频度取证完成（源=origin/main:testing/tests，11.5 tag 无 testing 目录），数字入 cmd.tbl notes；printf freq=4 已取证、收录判定随 B1 实收复核。
 - **v1.2.2**（2026-10-27，B1）：会话级封装封版（§6.3：FRB1 头 50B、entry tag 0x01 帧/0xFF cmnt、帧号隐含连续、asset 文本规范形 kind 名字+hex 载荷、dump 侧共享校验）；fr-as/fr-dis 交付；round-trip 双向回归进仓（golden + 生成式）。printf 复核：print freq=8 ≥ printf freq=4，v1 不单列 printf（后续按实收再议）。
+- **v1.2.3**（2026-10-27，B3b）：L0 语义样机口径登记——st 行 obj=0+点路径（语义形态，B6 A 方案替换为物理 obj id）、s_crc/d_crc=B3b 期为状态序列化 CRC32（样机，B6 换堆遍历）；L0 只产 .fr 文本（.frb 经 fr-as 转换）。

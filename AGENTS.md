@@ -22,11 +22,12 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 ## Setup commands
 
 - 运行 LÖVE：`love2d/love-11.5-win64/love.exe <游戏目录>`
+- L0 产流样机（B3b）：`love2d/love-11.5-win64/love.exe l0 --demo --frames N --fixed-dt X --sha <表指纹> --seed S --out <path>`（表指纹=`tools.fr_gen.tbl` 的 `tbl_sha256(tbl.parse(表文本))`；golden 在 `tests/golden/l0_session.fr`）
 - Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
 - C 工具链：本机 `D:/Lab/_tools/mingw64`（x86_64，优先）与 `D:/Lab/_tools/mingw32`（i686）——均为 GCC 14.2.0，无 PATH——根 conftest.py 自动注入；C 编译冒烟与 fr_selftest（跨架构字节对账）本地可跑，gyl 为第三平台
-- 测试：`pytest tests/`（62 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit 自测）
+- 测试：`pytest tests/`（69 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit 自测/L0 headless）
 
 ## Project layout
 

@@ -114,7 +114,7 @@
 | B1 | round-trip 回归（pytest 进仓）；帧/会话封装布局、asset 文本规范形（C 字段级 emit 顺延 B3） | `.fr`→`.frb`→`.fr` 逐字节相等（含 CMNT、err 行） ✅ 已完成（2026-10-27：会话封装封版、CMNT/err 行入回归，golden+生成式双向） |
 | B2 | fr-as / fr-dis / fr-dump / fr-check 最小面 | 样例流 dump 锚行可 grep；判据脚本通过 ✅ fr-as/fr-dis 已交付（2026-10-27）；fr-dump/fr-check 移至 B3 批次 |
 | B3a | 工具面补全：fr-dump（双输入 canonical dump + stats/选帧）、fr-check（canonical 幂等/sha 对账内置 + FileCheck 式判据）；C 字段级 emit（B0 顺延清偿） | dump 双输入逐字节一致；fr-check 判据全过；gyl 跨目标 `C EMIT OK 24 rows` ✅ 已完成（2026-10-27，mingw i686 与 gyl x86_64 双平台字节回归） |
-| B3b | L0 纯 Lua 产流：代理 shim + 排干快照 run loop + 状态走查器（st 语义样机） | 产出五段齐全会话文件；fr-dis 可读；fr-check 通过 |
+| B3b | L0 纯 Lua 产流：代理 shim + 排干快照 run loop + 状态走查器（st 语义样机） | 产出五段齐全会话文件；fr-dis 可读；fr-check 通过 ✅ 已完成（2026-10-27：L0 产流五段齐全会话，fr-check 过，golden 固化） |
 | B4 | L1 魔改首批：捕获接入 + 资产语义替代四件套（newImage/newCanvas/newFont/newQuad）+ C 回放器 + null Graphics | capture-then-replay 首帧上屏；同流文件经拓扑 B 离线回放与同进程屏幕 d_crc 一致 |
 | B5 | 事件注入回放（严格档） | 同一 `.frb` 重放 N 次 s_crc/d_crc 全一致；合成事件对拍零失配 |
 | B6 | log A 方案：堆镜像 diff + 登记表 + checkpoint | s_crc 跨运行稳定；st 行噪声实测可控（rehash→表重建事件） |
