@@ -6,6 +6,9 @@ __pycache__/
 love2d/love-11.5-win64/
 love2d/love-11.5-win64.zip
 
+# megasource（官方依赖打包仓库，含子模块；B4 fork 构建基座，不入库）
+megasource/
+
 # 第三方参考仓库（借鉴用，不入库）
 refs/
 
