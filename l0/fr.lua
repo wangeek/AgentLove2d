@@ -10,13 +10,14 @@
 --   render 记 "-"，对齐 Python `hexed if hexed else "-"`（bytes.hex()=="" 分支）。
 local fr = {}
 
--- 字符串转义：与 Python _esc 同构——\ " \n \r \t 转义；其余 C0 与 DEL、
+-- 字符串转义：与 Python _esc 同构——\ " \n \r \t 转义；其余 C0 与
 -- U+2028/U+2029 拒收（canonical 文本行不容纳未转义控制字符，防行撕裂）。
+-- 口径以 spec §6 封版为准（DEL 0x7F 不在拒收集——评审修正，勿自行加严）。
 -- C0 检查逐字节做（不用字符类 pattern——LuaJIT 下源码 `\0` 转义进 pattern 不可靠）。
 function fr.esc(s)
     for i = 1, #s do
         local b = s:byte(i)
-        if (b < 32 and b ~= 9 and b ~= 10 and b ~= 13) or b == 127 then
+        if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
             error("fr: 控制字符禁入 canonical 文本")
         end
     end
