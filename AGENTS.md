@@ -26,8 +26,8 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
-- C 工具链：本机 `D:/Lab/_tools/mingw64`（x86_64，优先）与 `D:/Lab/_tools/mingw32`（i686）——均为 GCC 14.2.0，无 PATH——根 conftest.py 自动注入；C 编译冒烟与 fr_selftest（跨架构字节对账）本地可跑，gyl 为第三平台
-- 测试：`pytest tests/`（69 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit 自测/L0 headless）
+- C 工具链：本机 `D:/Lab/_tools/mingw64`（x86_64，主力）与 `D:/Lab/_tools/mingw32`（i686——**2026-10-27 起编译子进程损坏**：连 hello.c 都静默 exit 1，待重置；跨架构对账暂依赖 gyl）——均为 GCC 14.2.0，无 PATH——根 conftest.py 自动注入（mingw64 优先）；另有 MSVC BuildTools 2022（cl 19.44，x86 根下）与 LLVM 21.1.5（`D:/Lab/_tools/LLVM`，clang/lld-link/lldb）——B4 fork 的 MSVC 官方构建路线零安装可行（docs/build-probe.md）
+- 测试：`pytest tests/`（72 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit+解码自测/L0 headless）
 
 ## Project layout
 
