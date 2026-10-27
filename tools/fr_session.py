@@ -1,4 +1,4 @@
-# tools/fr_session.py
+﻿# tools/fr_session.py
 """会话级封装（B1 封版）：.fr canonical 文本 ↔ Session ↔ .frb 二进制。
 
 Session = dict(width, height, sha, loglvl, seed,
@@ -188,7 +188,7 @@ def _parse_frame_body(body):
     """帧体 bytes → rows 列表。
 
     行长求解：B0 的 decode_row 严格校验整段消费（行尾冗余即 ValueError），
-    无法对"剩余帧体"直接解码；故对每个行起点以尝试长度自 2 起递增逼近，
+    无法对"剩余帧体"直接解码；故对每个行起点以尝试长度自 2 起递增逼近（O(L²)——cursor 变体即消除），
     decode_row 只在恰好行长处成功（短则截断、长则冗余，成功点唯一），
     成功后按计划口径用"重编码长度"推进游标——B0 无 cursor 变体的务实解。
     代价：每帧 O(行长²) 次解码尝试（B1 规模的样例帧毫无压力）；B1 之后
