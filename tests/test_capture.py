@@ -191,6 +191,91 @@ def test_fork_tee_deterministic(tmp_path):
         assert fa.read() == fb.read()
 
 
+# ---------------- B6 Task 1：堆 CRC 档（end 段 s_crc） ----------------
+
+# 已知阻塞（xfail，父会话定夺）：s_crc 拍板口径 = gc.root 链全堆 GCtab
+# 指纹，而录制进程（--out/--sha/--seed/--inject-* 共 10 个 argv 项）与
+# --sim 进程（--sim path 共 2 项）的 args 表形态/解析簿记表天然不同——
+# 整堆 CRC 跨进程等值结构上不可达（同参双跑/无头一致已各自成立）。解法
+# 候选：sim 比对改 kernel 状态子图 CRC（偏离拍板需重定义）或放宽该用途。
+import pytest
+
+def _scrc_of_blocks(blocks):
+    """帧块 → {帧号: crc}（每块恰一行 s_crc <u32十进制>）。"""
+    m = {}
+    for fi, rows in blocks.items():
+        hits = [ln for ln in rows if ln.startswith("s_crc ")]
+        assert len(hits) == 1, (fi, rows, "帧块应恰含一行 s_crc")
+        t = hits[0].split()
+        assert len(t) == 2, hits[0]
+        crc = int(t[1])
+        assert 0 <= crc <= 0xFFFFFFFF, (hits[0], "s_crc 应为 u32")
+        m[fi] = crc
+    return m
+
+
+def test_state_crc_rows(tmp_path):
+    """测试 11（B6 Task 1）：注入 tee → 每帧块尾 `s_crc <u32十进制>` 行
+    （out 行之后，end 段）；帧 3 ≠ 帧 0（tick/hero.x/clicks 状态在变）；
+    s_crc 行 canonical（fr_check 过）。"""
+    out = str(tmp_path / "scrc.fr")
+    r = _run_demo(env_capture=True,
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    with open(out, "rb") as f:
+        lines = f.read().decode("utf-8").splitlines()
+    blocks = _frame_blocks(lines)
+    m = _scrc_of_blocks(blocks)
+    assert set(m) == {0, 1, 2, 3}, m
+    for fi, rows in blocks.items():
+        assert rows[-1].startswith("s_crc "), (fi, rows[-3:], "s_crc 应为帧块尾行")
+    assert m[3] != m[0], (m, "帧 3 与帧 0 堆 CRC 应不同（内核状态在变）")
+
+    chk = subprocess.run(
+        [sys.executable, os.path.join(_ROOT, "tools", "fr_check.py"), out],
+        capture_output=True, timeout=60, cwd=_ROOT)
+    assert chk.returncode == 0, (chk.stdout, chk.stderr)
+
+
+def test_state_crc_deterministic(tmp_path):
+    """测试 12（B6 Task 1）：同参双跑（不同 out 路径——路径串不进 GCtab
+    CRC）→ 逐帧 s_crc 一致：确定性序（gc.root 链序×槽位序）+ GC 载荷
+    规范化（str/tab 槽只计 tag，地址位清零——ASLR 不破确定性）。"""
+    crcs = []
+    for p in (str(tmp_path / "a.fr"), str(tmp_path / "b.fr")):
+        r = _run_demo(env_capture=True,
+                      extra=_tee_args(p) + ["--inject-click", "200,100",
+                                            "--inject-key", "return"])
+        assert r.returncode == 0, (r.returncode, r.stderr)
+        with open(p, "rb") as f:
+            blocks = _frame_blocks(f.read().decode("utf-8").splitlines())
+        crcs.append(_scrc_of_blocks(blocks))
+    assert crcs[0] == crcs[1], (crcs, "同参双跑 s_crc 不一致")
+
+
+@pytest.mark.xfail(reason="整堆 s_crc 跨进程（录制 vs --sim argv/簿记差异）结构上不可等值，"
+                    "待拍板：sim 比对改 kernel 子图 CRC 或另定口径", strict=True)
+def test_state_crc_sim_replay(tmp_path):
+    """测试 13（B6 Task 1）：--sim 严格档重演 → 重演侧逐帧 s_crc 与录制
+    一致（SIM_CRC <f> ok 全 ok——内核状态重演全对，用途 3）。"""
+    out = str(tmp_path / "sim_src.fr")
+    r = _run_demo(env_capture=True,
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    rr = subprocess.run([sys.executable,
+                         os.path.join(_ROOT, "tools", "fr_render.py"),
+                         "--sim", out], capture_output=True, timeout=120,
+                        cwd=_ROOT)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
+    got = [ln for ln in rr.stdout.decode("utf-8").splitlines()
+           if ln.startswith("SIM_CRC ")]
+    assert len(got) == 4, (got, "SIM_CRC 帧行数应 = 帧数 4")
+    for i, ln in enumerate(got):
+        assert ln == "SIM_CRC %d ok" % i, (ln, "帧 %d 重演 s_crc 不一致" % i)
+
+
 # ---------------- B4 阶段三：真字节登记 + 真纹理物化 ----------------
 
 def test_asset_real_bytes(tmp_path):
