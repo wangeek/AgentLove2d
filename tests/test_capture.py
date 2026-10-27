@@ -252,3 +252,74 @@ def test_headless_tee_identical(tmp_path):
     assert not any(ln.startswith("D_CRC") for ln in hd_lines), hd_lines
     # 有窗版照常回读（对照：差异只在 stdout 诊断，不在 .fr 流）
     assert "PIXELS 3 3" in r_win.stdout.decode("utf-8").splitlines()
+
+
+# ---------------- B5 Task 1：事件捕获 + 事件驱动化（--inject-*） ----------------
+
+def _frame_blocks(lines):
+    """tee .fr 行列表 → {帧号: [帧块内行]}（frame N 定界）。"""
+    blocks, cur = {}, None
+    for ln in lines:
+        if ln.startswith("frame "):
+            cur = int(ln.split()[1])
+            blocks[cur] = []
+        elif cur is not None:
+            blocks[cur].append(ln)
+    return blocks
+
+
+_CLICK_RECT = ("rect 0 196.000000 96.000000 8.000000 8.000000 0.000000 0.000000 "
+               "1.000000 255 255 255 255")
+
+
+def test_event_capture(tmp_path):
+    """测试 10（B5 Task 1）：--inject-click 200,100 --inject-key return 注入 →
+    tee .fr：帧 1 块 mousepressed ev 行（push 参数序 x y button istouch presses
+    全 5 参、src=0、slot=0）+ 帧 1 out 点击标记 rect（左上 (x-4,y-4) 8x8 白）+
+    帧 2 keypressed ev 行与 banner "KEY"；未注入帧 in 段为空（环境事件不混
+    入）；ev 行 canonical（fr_check 过）；注入会话两次运行逐字节一致。"""
+    out = str(tmp_path / "ev.fr")
+    r = _run_demo(env_capture=True,
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+
+    with open(out, "rb") as f:
+        lines = f.read().decode("utf-8").splitlines()
+    blocks = _frame_blocks(lines)
+
+    # 帧 1 in：mousepressed ev 行——注入 push 的 5 参在 poll 取出时全量落行
+    assert ('ev 0 "mousepressed" 0 5 num 200.000000 num 100.000000 '
+            "num 1.000000 bool 0 num 1.000000") in blocks[1], blocks[1]
+    # 帧 1 out：点击标记 rect（8x8 白 fill，中心=点击点 → 左上 (196,96)）
+    assert _CLICK_RECT in blocks[1], blocks[1]
+    # 帧 1 banner 仍 "L0"（key 事件帧 2 才到——帧间因果时序锚）
+    assert ('print 2 "L0" 12.000000 340.000000 0.000000 1.000000 1.000000 '
+            "255 255 0 255") in blocks[1], blocks[1]
+
+    # 帧 2 in：keypressed ev 行（镜像 OS 3 参形态 key scancode isrepeat）
+    assert 'ev 0 "keypressed" 0 3 str "return" str "return" bool 0' in blocks[2], blocks[2]
+    # 帧 2 out：banner 切 "KEY"；点击标记留存（clicks 状态跨帧）
+    assert ('print 2 "KEY" 12.000000 340.000000 0.000000 1.000000 1.000000 '
+            "255 255 0 255") in blocks[2], blocks[2]
+    assert _CLICK_RECT in blocks[2], blocks[2]
+
+    # 未注入帧（0/3）in 段为空：环境/连续事件（focus/visible/mousemoved…）
+    # 不进流——tee 确定性口径（不注入则 in 段为空）
+    for fi in (0, 3):
+        assert not any(ln.startswith("ev ") for ln in blocks[fi]), blocks[fi]
+
+    # ev 行 canonical：fr_check 全流校验（canonical 幂等 + sha 对账）过
+    chk = subprocess.run(
+        [sys.executable, os.path.join(_ROOT, "tools", "fr_check.py"), out],
+        capture_output=True, timeout=60, cwd=_ROOT)
+    assert chk.returncode == 0, (chk.stdout, chk.stderr)
+
+    # 注入确定性：同参数再跑一次，产物逐字节一致（注入帧号固定）
+    out2 = str(tmp_path / "ev2.fr")
+    r2 = _run_demo(env_capture=True,
+                   extra=_tee_args(out2) + ["--inject-click", "200,100",
+                                            "--inject-key", "return"])
+    assert r2.returncode == 0, (r2.returncode, r2.stderr)
+    with open(out, "rb") as fa, open(out2, "rb") as fb:
+        assert fa.read() == fb.read(), "注入会话两次运行不逐字节一致"
