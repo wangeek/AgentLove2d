@@ -24,11 +24,12 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - 运行 LÖVE：`love2d/love-11.5-win64/love.exe <游戏目录>`
 - L0 产流样机（B3b）：`love2d/love-11.5-win64/love.exe l0 --demo --frames N --fixed-dt X --sha <表指纹> --seed S --out <path>`（表指纹=`tools.fr_gen.tbl` 的 `tbl_sha256(tbl.parse(表文本))`；golden 在 `tests/golden/l0_session.fr`）
 - **fork 构建（B4 起）**：megasource 在 `megasource/`（11.5 tag，不入库）；增量构建 `cmake --build megasource\build115 --config Release`；环境变量 `CMAKE_POLICY_VERSION_MINIMUM=3.5` 必设（openal 内部 cmake 用）；自建运行时在 `megasource\build115\love\Release\`
+- fork 捕获 rig（B4-2）：`megasource\build115\love\Release\love.exe megasource\libs\love\demo`（`FR_CAPTURE=1` 时捕获/回放，缺省 3 帧验证 rig 打 PIXEL/会话行）；tee₁ 会话加 `--out <path> --sha <表指纹> [--seed S] [--frames N 缺省 4]`（out-only 形态，st/end 段归 B6；回归 tests/test_capture.py）
 - Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
 - C 工具链：本机 `D:/Lab/_tools/mingw64`（x86_64，主力）与 `D:/Lab/_tools/mingw32`（i686——**2026-10-27 起编译子进程损坏**：连 hello.c 都静默 exit 1，待重置；跨架构对账暂依赖 gyl）——均为 GCC 14.2.0，无 PATH——根 conftest.py 自动注入（mingw64 优先）；另有 MSVC BuildTools 2022（cl 19.44，x86 根下）与 LLVM 21.1.5（`D:/Lab/_tools/LLVM`，clang/lld-link/lldb）——B4 fork 的 MSVC 官方构建路线零安装可行（docs/build-probe.md）
-- 测试：`pytest tests/`（72 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit+解码自测/L0 headless）
+- 测试：`pytest tests/`（78 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit+解码自测/L0 headless/fork 捕获与 tee₁）
 
 ## Project layout
 
