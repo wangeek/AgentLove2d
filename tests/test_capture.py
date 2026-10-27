@@ -24,12 +24,14 @@ sys.path.insert(0, _ROOT)
 from tools.fr_gen.quantize import qf  # noqa: E402  判据链：坐标按 %.6f 域复算
 
 
-def _run_demo(env_capture, timeout=60, extra=None):
+def _run_demo(env_capture, timeout=60, extra=None, env_extra=None):
     env = os.environ.copy()
     if env_capture:
         env["FR_CAPTURE"] = "1"
     else:
         env.pop("FR_CAPTURE", None)
+    if env_extra:
+        env.update(env_extra)
     return subprocess.run([FORK_LOVE, DEMO] + (extra or []), capture_output=True,
                           timeout=timeout, env=env, cwd=_ROOT)
 
@@ -222,3 +224,31 @@ def test_materialized_pixel():
     got = _pixel_map(lines)
     assert got.get((20, 30)) == (255, 0, 0), \
         (lines, "方块区非真红：物化未生效（占位伪色 id=1→白？）")
+
+
+# ---------------- B4 阶段三 Task 4：null Graphics（拓扑 C 无头） ----------------
+
+def test_headless_tee_identical(tmp_path):
+    """测试 9（阶段三 Task 4）：FR_HEADLESS=1 无窗（t.window=false）跑同 demo
+    ——tee .fr 与有窗版逐字节一致。捕获层与窗口解耦的实证：行记录/资产登记/
+    会话缓冲全 GL-free，无头仅跳过 GL 依赖的回放与 Canvas 回读（stdout 诊断，
+    不进 .fr）。无头依赖边界见 fr_capture.h 头注。"""
+    win_out, headless_out = str(tmp_path / "win.fr"), str(tmp_path / "headless.fr")
+    r_win = _run_demo(env_capture=True, extra=_tee_args(win_out))
+    assert r_win.returncode == 0, (r_win.returncode, r_win.stderr)
+
+    r_hd = _run_demo(env_capture=True, extra=_tee_args(headless_out),
+                     env_extra={"FR_HEADLESS": "1"})
+    assert r_hd.returncode == 0, (r_hd.returncode, r_hd.stdout, r_hd.stderr,
+                                  "无头跑挂：捕获层仍有 GL 依赖点未解耦")
+
+    with open(win_out, "rb") as fa, open(headless_out, "rb") as fb:
+        a, b = fa.read(), fb.read()
+    assert a == b, (a[:200], b[:200], "无头 tee 与有窗 tee 不逐字节一致")
+
+    # 无头边界自证：GL 依赖的验证帧回读（PIXEL/D_CRC）在无头下不发生
+    hd_lines = r_hd.stdout.decode("utf-8").splitlines()
+    assert not any(ln.startswith("PIXEL") for ln in hd_lines), hd_lines
+    assert not any(ln.startswith("D_CRC") for ln in hd_lines), hd_lines
+    # 有窗版照常回读（对照：差异只在 stdout 诊断，不在 .fr 流）
+    assert "PIXELS 3 3" in r_win.stdout.decode("utf-8").splitlines()
