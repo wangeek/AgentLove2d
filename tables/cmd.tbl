@@ -27,7 +27,7 @@ ev	in	slot u32 type str src u8 args...	Event::pump→convert 造 Message（sdl/E
 call	in	slot u32 fn str depth u8 args...	run loop 分发循环（CALL=直接函数调用=栈帧增长）	sealed	同步嵌套记深度；分发中 push 落下一帧快照
 timer	in	slot u32 id u32	update(dt) 结算到期合成	sealed	内核定时器到期事实；归一规则：定时=update 结算产生
 rngc	log	seed_after u32	love.math.random 边界（boot 层 math.random 已归一到 love.math，单咽喉）	sealed	base 级收录；对拍必需品
-st	log	obj u32 key str val variant	方案A 堆镜像 diff 物理 records（docs/love2d-gap.md §四）	draft	full 级；路径解析=消费端 logical decoding（登记表+epoch）；表重建事件=整表重发；B3b 样机口径：obj=0+点路径（语义形态，spec §13 v1.2.3）
+st	log	obj u32 key str val variant	方案A 堆镜像 diff 物理 records（docs/love2d-gap.md §四）	draft	full 级；路径解析=消费端 logical decoding（登记表+epoch）；表重建事件=整表重发；
 err	log	what str	未收录 API 调用/兜底触发/表重建计数	sealed	豁免于 off 级：忠实性事实不可关
 clear	out	color rgba8	love.graphics.clear（wrap_Graphics.cpp:2912）	sealed	freq=54
 draw	out	tex u32 quad u32 x f32 y f32 rot f32 sx f32 sy f32 ox f32 oy f32 color rgba8	love.graphics.draw（:2332，注册表 :2984）	sealed	tex=image/canvas 资产号；quad 0=整图，否则 quad 资产号；翻转=sx/sy 负值；color 每行自带（setColor 折参数） freq=24
@@ -40,5 +40,5 @@ arc	out	mode u8 arctype u8 x f32 y f32 r f32 a1 f32 a2 f32 seg u32 color rgba8	l
 points	out	pts f32[] size f32 color rgba8	love.graphics.points（:3010）	sealed	freq=3
 rt	out	target u32	love.graphics.setCanvas（:2933）	sealed	0=屏幕，否则 canvas 资产号；out 段为有序流，rt 行切换目标；canvas 间合成=draw 引用 canvas 资产 freq=122
 scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7
-s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B3b 样机口径=CRC32(st 行文本)（spec §13 v1.2.3，B6 换 A 方案）
+s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B6 物理形态=注册状态根子图 CRC（D8 裁定）；B3b 样机已退役
 d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量；B3b 样机口径=CRC32(out 行文本)
