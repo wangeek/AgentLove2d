@@ -228,7 +228,9 @@ def test_state_crc_rows(tmp_path):
     m = _scrc_of_blocks(blocks)
     assert set(m) == {0, 1, 2, 3}, m
     for fi, rows in blocks.items():
-        assert rows[-1].startswith("s_crc "), (fi, rows[-3:], "s_crc 应为帧块尾行")
+        # B7a：end 段双行——s_crc 后紧跟 d_crc（帧块尾行是 d_crc）
+        assert rows[-1].startswith("d_crc "), (fi, rows[-3:], "d_crc 应为帧块尾行（B7a end 段双行）")
+        assert rows[-2].startswith("s_crc "), (fi, rows[-3:], "s_crc 应紧邻 d_crc 之前")
     assert m[3] != m[0], (m, "帧 3 与帧 0 状态子图 CRC 应不同（内核状态在变）")
 
     chk = subprocess.run(
@@ -272,8 +274,10 @@ def test_state_crc_sim_replay(tmp_path):
     got = [ln for ln in rr.stdout.decode("utf-8").splitlines()
            if ln.startswith("SIM_CRC ")]
     assert len(got) == 4, (got, "SIM_CRC 帧行数应 = 帧数 4")
+    # B7a：SIM_CRC 行改双比对 s=<ok|mis> d=<ok|mis>（s=堆子图 CRC、
+    # d=当帧 out 行 CRC——重演侧同收集；录制/重演逐帧一致）
     for i, ln in enumerate(got):
-        assert ln == "SIM_CRC %d ok" % i, (ln, "帧 %d 重演 s_crc 不一致" % i)
+        assert ln == "SIM_CRC %d s=ok d=ok" % i, (ln, "帧 %d 重演 s_crc/d_crc 不一致" % i)
 
 
 # ---------------- B6 Task 2：diff 档（影子镜像 st 物理行，FR_LOGLEVEL=full） ----------------
@@ -330,7 +334,7 @@ def test_state_diff_rows(tmp_path):
     assert len(log1) < len(log0), (len(log0), len(log1), log0, log1)
 
     # 帧 2：banner 切 "KEY"（keypressed 注入）——str 值内容变化须检出
-    #（diff 槽指纹对 str 补内容 CRC；CRC 档的 tag 位口径逮不住，自审登记）
+    #（B7a 起槽指纹单一化：str = tag+len+内容 CRC，s_crc 与 diff 同规则）
     log2 = _log_rows(blocks[2])
     assert 'st 1 "banner" str "KEY"' in log2, log2
     assert 'st 1 "tick" num 3.000000' in log2, log2
@@ -390,7 +394,7 @@ def test_state_diff_sim(tmp_path):
     assert ("SIM %d MATCH" % 0) in sim_lines, sim_lines
     for i in range(4):
         assert ("SIM %d MATCH" % i) in sim_lines, sim_lines
-        assert ("SIM_CRC %d ok" % i) in sim_lines, sim_lines
+        assert ("SIM_CRC %d s=ok d=ok" % i) in sim_lines, sim_lines
     assert "SIM SUMMARY 4 4 0 0" in sim_lines, sim_lines
 
     # 反向自证：篡改帧 0 的 st 行值 → 重演侧再生行与篡改行不符 → MISMATCH
@@ -409,6 +413,101 @@ def test_state_diff_sim(tmp_path):
     assert rm.returncode == 1, (rm.returncode, rm.stdout, rm.stderr)
     m_lines = rm.stdout.decode("utf-8").splitlines()
     assert any(ln.startswith("SIM 0 MISMATCH") for ln in m_lines), m_lines
+
+
+# ---------------- B7a：canonicalization 单一化 + d_crc 进流 ----------------
+
+def _dcrc_of_blocks(blocks):
+    """帧块 → {帧号: crc}（每块恰一行 d_crc <u32十进制>）。"""
+    m = {}
+    for fi, rows in blocks.items():
+        hits = [ln for ln in rows if ln.startswith("d_crc ")]
+        assert len(hits) == 1, (fi, rows, "帧块应恰含一行 d_crc")
+        t = hits[0].split()
+        assert len(t) == 2, hits[0]
+        crc = int(t[1])
+        assert 0 <= crc <= 0xFFFFFFFF, (hits[0], "d_crc 应为 u32")
+        m[fi] = crc
+    return m
+
+
+_OUT_OPS = ("clear ", "draw ", "print ", "rect ")
+
+
+def _out_rows(rows):
+    """帧块行 → out 行（clear/draw/print/rect，保序——d_crc 行集口径：
+    不含 dt/asset/ev/st/err/s_crc）。"""
+    return [ln for ln in rows if ln.startswith(_OUT_OPS)]
+
+
+def test_d_crc_rows(tmp_path):
+    """测试 16（B7a）：注入 tee → 每帧块尾 end 段双行 `s_crc`+`d_crc`；
+    d_crc = 当帧 out 行文本（join "\\n"）CRC32——Python 侧 zlib.crc32 独立
+    重算逐帧对账（自检+独立重算范式；zlib.crc32 与 fr_crc32_bytes 同规格
+    0xEDB88320/reflected/init-xorout 0xFFFFFFFF）；帧间 d_crc 变化
+    （hero.x 每帧位移 → draw 行变）；双跑逐帧一致；fr_check 过（canonical）。"""
+    import zlib
+    out = str(tmp_path / "dcrc.fr")
+    r = _run_demo(env_capture=True,
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    with open(out, "rb") as f:
+        lines = f.read().decode("utf-8").splitlines()
+    blocks = _frame_blocks(lines)
+    m = _dcrc_of_blocks(blocks)
+    assert set(m) == {0, 1, 2, 3}, m
+    for fi, rows in blocks.items():
+        outs = _out_rows(rows)
+        assert outs, (fi, rows, "帧块应有 out 行")
+        expect = zlib.crc32("\n".join(outs).encode("utf-8")) & 0xFFFFFFFF
+        assert m[fi] == expect, (fi, m[fi], expect, "d_crc 与 out 行独立重算不符")
+    # 帧间变化：帧 0 与帧 1 的 out 行集不同（hero.x 位移 → draw 行坐标变）
+    assert m[0] != m[1], (m, "帧间 d_crc 应变化（out 行在变）")
+
+    # 双跑确定（路径串不进 out 行文本）
+    out2 = str(tmp_path / "dcrc2.fr")
+    r2 = _run_demo(env_capture=True,
+                   extra=_tee_args(out2) + ["--inject-click", "200,100",
+                                            "--inject-key", "return"])
+    assert r2.returncode == 0, (r2.returncode, r2.stderr)
+    with open(out2, "rb") as f:
+        blocks2 = _frame_blocks(f.read().decode("utf-8").splitlines())
+    assert m == _dcrc_of_blocks(blocks2), "同参双跑 d_crc 不一致"
+
+    # d_crc 行 canonical（fr_check 全流校验过）
+    chk = subprocess.run(
+        [sys.executable, os.path.join(_ROOT, "tools", "fr_check.py"), out],
+        capture_output=True, timeout=60, cwd=_ROOT)
+    assert chk.returncode == 0, (chk.stdout, chk.stderr)
+
+
+def test_s_crc_str_sensitive(tmp_path):
+    """测试 17（B7a canonicalization 单一化）：str 内容进 s_crc——两会话帧 2
+    状态除 banner（"L0" vs "KEY"，等长同 tag）外全同（注入 key 只 toggle
+    banner，tick/hero/clicks 不动）→ 帧 2/3 s_crc 不同（旧 tag 位口径下
+    相同：str 内容盲区收敛实证）；帧 0/1 s_crc 相同（同状态同 CRC 的
+    确定性 + 差分前提自证）。帧 2 d_crc 同差（banner 进 print 行文本）。"""
+    a, b = str(tmp_path / "plain.fr"), str(tmp_path / "keyed.fr")
+    r_a = _run_demo(env_capture=True, extra=_tee_args(a))
+    assert r_a.returncode == 0, (r_a.returncode, r_a.stderr)
+    r_b = _run_demo(env_capture=True,
+                    extra=_tee_args(b) + ["--inject-key", "return"])
+    assert r_b.returncode == 0, (r_b.returncode, r_b.stderr)
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        text_a = fa.read().decode("utf-8")
+        text_b = fb.read().decode("utf-8")
+    sa = _scrc_of_blocks(_frame_blocks(text_a.splitlines()))
+    sb = _scrc_of_blocks(_frame_blocks(text_b.splitlines()))
+    # 同状态（key 事件帧 2 才注入）→ 同 CRC：确定性锚
+    assert sa[0] == sb[0] and sa[1] == sb[1], (sa, sb, "帧 0/1 状态全同应同 s_crc")
+    # banner-only 差异（"L0"→"KEY"，等长同 tag）须进 s_crc
+    assert sa[2] != sb[2], (sa, sb, "帧 2 banner 内容差异未进 s_crc（str 盲区仍在？）")
+    assert sa[3] != sb[3], (sa, sb, "帧 3 banner 保持差异，s_crc 应不同")
+    # 旁证：banner 同进当帧 out 行（print 行文本）→ d_crc 同差
+    da = _dcrc_of_blocks(_frame_blocks(text_a.splitlines()))
+    db = _dcrc_of_blocks(_frame_blocks(text_b.splitlines()))
+    assert da[2] != db[2], (da, db, "帧 2 banner 差异应进 d_crc（print 行）")
 
 
 # ---------------- B4 阶段三：真字节登记 + 真纹理物化 ----------------
