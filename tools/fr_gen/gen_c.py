@@ -14,7 +14,10 @@ fr_selftest.c，C 解码→按字段重编码→与原始行字节 memcmp，计�
 tools.fr_session.parse_binary（跨语言同一字节流）。
 产出确定性：无时间戳/随机数——同表重复再生逐字节相等（UTF-8 + LF）。
 改表后运行再生入口：仓库根 `python -m tools.fr_gen.gen_c`（直跑本文件亦可），
-重写三个生成物并打印表指纹。注意：期望字节取自 Python 目标——改表后须先再生
+重写三个生成物并打印表指纹。双路径再生（B4-2）：megasource fork 树在场时，
+再生入口同步更新 fork 内 codec 副本（src/modules/graphics/fr/，仅 h/c 两件——
+selftest 不进 fork，其 main() 与 love 目标冲突），副本与 render/ 逐字节一致。
+注意：期望字节取自 Python 目标——改表后须先再生
 Python 目标（`python -m tools.fr_gen.gen_python`）再再生 C，顺序即 AGENTS.md 工作流；
 golden .frb 内嵌表指纹，改表后须重产 golden（l0 + fr_as）再再生 C。
 """
@@ -1364,9 +1367,12 @@ def _self_check(h, rows):
             raise ValueError("自检失败：行解码 API 缺失: %s" % sym)
 
 
-def generate(rows, out_dir):
+def generate(rows, out_dir, extra=None):
     """生成 fr_codec.h/.c/fr_selftest.c 写入 out_dir（UTF-8 + LF），
     返回 (h, c, st) 三段文本。
+
+    extra 非空时为第二输出目录（B4-2 fork 副本同步）：仅写 fr_codec.h/.c 两件，
+    不写 fr_selftest.c（其 main() 与 love 目标冲突）；两目录副本逐字节一致。
 
     生成期自检：C 标识符断言 + 生成后 parse 回读 .h 断言 sha/常量/枚举/类型化
     声明面/解码 API 面——模板或表坏了当场报，不落盘。期望字节取自 Python 目标
@@ -1403,6 +1409,13 @@ def generate(rows, out_dir):
         f.write(c)
     with open(out / "fr_selftest.c", "w", encoding="utf-8", newline="\n") as f:
         f.write(st)
+    if extra is not None:
+        ex = pathlib.Path(extra)
+        ex.mkdir(parents=True, exist_ok=True)
+        with open(ex / "fr_codec.h", "w", encoding="utf-8", newline="\n") as f:
+            f.write(h)
+        with open(ex / "fr_codec.c", "w", encoding="utf-8", newline="\n") as f:
+            f.write(c)
     return h, c, st
 
 
@@ -1417,5 +1430,11 @@ if __name__ == "__main__":
     from tools.fr_gen import tbl
 
     rows = tbl.parse((root / "tables" / "cmd.tbl").read_text(encoding="utf-8"))
-    generate(rows, root / "render")
+    # 双路径再生（B4-2）：render/ 三件套 + fork 内 codec 副本（仅 h/c 两件）。
+    # megasource 不入库——fork 树缺场时跳过副本（工具单机可用性不受影响）
+    fork_fr = root / "megasource" / "libs" / "love" / "src" / "modules" / "graphics" / "fr"
+    extra = fork_fr if (root / "megasource" / "libs" / "love").is_dir() else None
+    generate(rows, root / "render", extra=extra)
     print("render/fr_codec.h/.c/fr_selftest.c 已再生，TBL_SHA256 =", tbl.tbl_sha256(rows))
+    if extra is not None:
+        print("fork codec 副本已同步:", fork_fr)
