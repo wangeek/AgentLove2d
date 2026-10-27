@@ -41,6 +41,37 @@ def _fr_render(path, timeout=120):
                           capture_output=True, timeout=timeout, cwd=_ROOT)
 
 
+def _fr_render_sim(path, timeout=120):
+    """python tools/fr_render.py --sim <path>（B5 严格档注入回放）。"""
+    return subprocess.run([sys.executable, FR_RENDER, "--sim", str(path)],
+                          capture_output=True, timeout=timeout, cwd=_ROOT)
+
+
+def _run_live_tee_events(out_path):
+    """live tee₁ 会话 + 注入脚本（B5 事件链：帧 1 click / 帧 2 key）。"""
+    env = os.environ.copy()
+    env["FR_CAPTURE"] = "1"
+    return subprocess.run(
+        [FORK_LOVE, DEMO, "--out", str(out_path), "--sha", _tbl_sha(), "--seed", "3056735",
+         "--inject-click", "200,100", "--inject-key", "return"],
+        capture_output=True, timeout=60, env=env, cwd=_ROOT)
+
+
+def _sim_frame_lines(text):
+    """stdout → 逐帧 SIM 行（`SIM <n> MATCH|MISMATCH`，不含 SUMMARY）。"""
+    return [ln for ln in text.splitlines()
+            if ln.startswith("SIM ") and not ln.startswith("SIM SUMMARY")]
+
+
+def _sim_summary(text):
+    """stdout → (frames, match, mismatch, rc) 或 None（`SIM SUMMARY` 行）。"""
+    for ln in text.splitlines():
+        t = ln.split()
+        if t[:2] == ["SIM", "SUMMARY"]:
+            return int(t[2]), int(t[3]), int(t[4]), int(t[5])
+    return None
+
+
 def _d_crc_map(text):
     """stdout 文本 → {frame: crc}（D_CRC n crc 行）。"""
     m = {}
@@ -110,3 +141,60 @@ def test_render_pixel_samples(tmp_path):
     assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
     assert _pixel_lines(rr.stdout.decode("utf-8")) == live_px, \
         (rr.stdout, "离线采样像素与 live 验证帧不一致")
+
+
+# ---------------- B5 Task 2：严格档注入回放（--sim 内核重演） ----------------
+
+
+def test_sim_replay_match(tmp_path):
+    """B5 验收线：含事件流的严格档重演——内核重演再生 out 行与录制逐帧一致。"""
+    live_fr = tmp_path / "live_ev.fr"
+    r = _run_live_tee_events(live_fr)
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    text = live_fr.read_text(encoding="utf-8")
+    # 因果锚在场：帧 1 click ev + 标记 rect；帧 2 key ev + banner 变化
+    assert 'ev 0 "mousepressed"' in text, "流缺 mousepressed ev 行"
+    assert "rect 0 196.000000 96.000000 8.000000 8.000000" in text, "流缺点击标记 rect 行"
+    assert 'ev 0 "keypressed"' in text and '"KEY"' in text, "流缺 keypressed/banner 因果链"
+
+    rr = _fr_render_sim(live_fr)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
+    out = rr.stdout.decode("utf-8")
+    frames = _sim_frame_lines(out)
+    assert len(frames) == 4, (out, "SIM 帧行数应 = 帧数 4")
+    for i, ln in enumerate(frames):
+        assert ln == "SIM %d MATCH" % i, (ln, "帧 %d 重演不一致" % i)
+    assert _sim_summary(out) == (4, 4, 0, 0), out
+
+
+def test_sim_replay_stable(tmp_path):
+    """N 次重放稳定：同一流再跑一次，stdout 逐字节一致。"""
+    live_fr = tmp_path / "live_ev.fr"
+    r = _run_live_tee_events(live_fr)
+    assert r.returncode == 0, r.stderr
+
+    r1 = _fr_render_sim(live_fr)
+    r2 = _fr_render_sim(live_fr)
+    assert r1.returncode == 0 and r2.returncode == 0, (r1.stdout, r2.stdout, r1.stderr)
+    assert r1.stdout == r2.stdout, "两次重放 stdout 不一致"
+
+
+def test_sim_tamper_detection(tmp_path):
+    """篡改检测：删帧 1 的 mousepressed ev 行 → 帧 1 MISMATCH（因果依赖自证
+    ——事件不在则点击标记不再生，录制 rect 行悬空成差异）。"""
+    live_fr = tmp_path / "live_ev.fr"
+    r = _run_live_tee_events(live_fr)
+    assert r.returncode == 0, r.stderr
+
+    tampered = tmp_path / "tampered.fr"
+    lines = live_fr.read_text(encoding="utf-8").splitlines()
+    kept = [ln for ln in lines if not ln.startswith('ev 0 "mousepressed"')]
+    assert len(kept) == len(lines) - 1, "应恰删一行 mousepressed ev"
+    tampered.write_bytes(("\n".join(kept) + "\n").encode("utf-8"))
+
+    rr = _fr_render_sim(tampered)
+    out = rr.stdout.decode("utf-8")
+    assert rr.returncode == 1, (rr.returncode, out, rr.stderr, "篡改流重演不得 rc=0")
+    assert any(ln.startswith("SIM 1 MISMATCH") for ln in out.splitlines()), \
+        (out, "帧 1 应 MISMATCH（点击标记不再出现）")
+    assert _sim_summary(out) is not None and _sim_summary(out)[2] >= 1, out

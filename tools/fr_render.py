@@ -1,12 +1,19 @@
 ﻿# tools/fr_render.py
-"""fr-render —— 拓扑 B 离线回放驱动（B4 阶段三 Task 3，薄 CLI）。
+"""fr-render —— 拓扑 B 离线回放驱动（B4 阶段三 Task 3，薄 CLI）+ 严格档
+注入回放（B5 Task 2）。
 
-用法：python tools/fr_render.py <in.fr|in.frb>
+用法：python tools/fr_render.py <in.fr|in.frb>          离线回放（offline-replay）
+      python tools/fr_render.py --sim <in.fr>           严格档注入回放（demo --sim）
 
-驱动 fork 构建 love.exe 的 demo `--offline-replay` 模式（fr_offline_replay：
-读流 → 会话解包/解析 → capture_exec_row 同路径执行 → 真 Canvas 回读 →
-CRC32），取 stdout 的 `D_CRC <n> <crc>`（n = 已执行帧块数）与末帧
-`PIXEL x y r g b` 采样行打印；stderr 透传（含 off 偏移）；rc 透传。
+离线回放：驱动 fork 构建 love.exe 的 demo `--offline-replay` 模式
+（fr_offline_replay：读流 → 会话解包/解析 → capture_exec_row 同路径执行 →
+真 Canvas 回读 → CRC32），取 stdout 的 `D_CRC <n> <crc>`（n = 已执行帧块数）
+与末帧 `PIXEL x y r g b` 采样行打印；stderr 透传（含 off 偏移）；rc 透传。
+
+严格档注入回放（--sim）：驱动 demo `--sim` 模式（内核重演——逐帧把录制 ev
+行还原 push 进事件队列、同录制链路 poll 分发、kernel.update 吃录制 dt、
+FR_CAPTURE=1 捕获再生 out 行与录制逐行比对）；stdout 全量透传（`SIM <n>
+MATCH|MISMATCH` 帧行 + `SIM SUMMARY`）；rc 透传（全 MATCH=0，任一 MISMATCH=1）。
 """
 import os
 import subprocess
@@ -28,23 +35,43 @@ def render(path, timeout=TIMEOUT):
                           capture_output=True, timeout=timeout, env=env, cwd=_ROOT)
 
 
+def sim(path, timeout=TIMEOUT):
+    """严格档注入回放一次（--sim）：FR_CAPTURE 必须=1（重演捕获再生 out 行，
+    demo 侧另有自查），与 render 的开关口径相反。"""
+    if not os.path.isfile(FORK_LOVE):
+        raise SystemExit("fr-render: fork love.exe 不存在：%s（先增量构建 megasource）" % FORK_LOVE)
+    env = os.environ.copy()
+    env["FR_CAPTURE"] = "1"
+    return subprocess.run([FORK_LOVE, DEMO, "--sim", os.path.abspath(path)],
+                          capture_output=True, timeout=timeout, env=env, cwd=_ROOT)
+
+
 def main(argv):
-    if len(argv) != 2:
-        print("用法: python tools/fr_render.py <in.fr|in.frb>", file=sys.stderr)
+    if len(argv) == 3 and argv[1] == "--sim":
+        mode, path = "sim", argv[2]
+    elif len(argv) == 2:
+        mode, path = "render", argv[1]
+    else:
+        print("用法: python tools/fr_render.py <in.fr|in.frb> | --sim <in.fr>", file=sys.stderr)
         return 2
-    path = argv[1]
     if not os.path.isfile(path):
         print("fr-render: 流文件不存在：%s" % path, file=sys.stderr)
         return 2
 
-    r = render(path)
+    r = sim(path) if mode == "sim" else render(path)
     err = r.stderr.decode("utf-8", "replace")
     if err:
         sys.stderr.write(err)
-    for ln in r.stdout.decode("utf-8", "replace").splitlines():
-        t = ln.split()
-        if t[:1] == ["D_CRC"] or t[:1] == ["PIXEL"]:
-            print(ln)
+    out = r.stdout.decode("utf-8", "replace")
+    if mode == "sim":
+        sys.stdout.write(out)  # 透传：SIM 帧行 + SUMMARY（判据归调用方）
+        if out and not out.endswith("\n"):
+            print()
+    else:
+        for ln in out.splitlines():
+            t = ln.split()
+            if t[:1] == ["D_CRC"] or t[:1] == ["PIXEL"]:
+                print(ln)
     return r.returncode
 
 
