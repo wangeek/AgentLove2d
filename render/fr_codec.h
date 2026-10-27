@@ -93,6 +93,55 @@ int fr_encode_scissor(fr_buf *b, float x, float y, float w, float h);
 int fr_encode_s_crc(fr_buf *b, uint32_t crc);
 int fr_encode_d_crc(fr_buf *b, uint32_t crc);
 
+/* ---- 行级解码（B4 生成）：游标式，字段序由 per-op 类型静态表驱动（fr_codec.c）。
+ * 用法：fr_dec_init 后循环 fr_dec_next——返回 1=取到一行（opcode 在 d->op，
+ * asset 行 kind 另存 d->asset_kind）/ 0=流结束 / 负错误码（FR_DEC_ERR_*，
+ * 现场偏移 d->err_off）。返回值不直接载 op：FR_OP_DT=0x00 与"0=结束"冲突。
+ * 随后按表 signature 字段序调用访问器取字段；访问器带类型校验，顺序不符或
+ * 行已读完记 FR_DEC_ERR_TYPE。错误粘滞：出错后各访问器与 fr_dec_next 均短路。
+ * 内存口径：str 与 variant STR 载荷拷入调用方缓冲（NUL 结尾——匹配 fr_encode_*
+ * 的 strlen 入参语义，流内 str 无 NUL 字节）；asset 数据零拷贝（指针指向输入
+ * 缓冲，长度显式）；输入缓冲只读不改动。 */
+
+/* 行级解码错误码（fr_dec_next 返回值与 fr_dec.err 同域；现场偏移 fr_dec.err_off） */
+enum {
+    FR_DEC_ERR_TRUNCATED = -2, /* 字节不足 */
+    FR_DEC_ERR_OP = -3,        /* 未知 opcode / asset kind 非法 */
+    FR_DEC_ERR_TYPE = -4,      /* 访问器与静态表字段序不符 / variant tag 非法 */
+    FR_DEC_ERR_CAP = -5,       /* 出参容量不足（str/pts/args） */
+    FR_DEC_ERR_ROW = -6        /* 上一行字段未读完即 fr_dec_next */
+};
+
+typedef struct {
+    const uint8_t *p;     /* 输入缓冲（只读，不改动） */
+    size_t len;           /* 总长 */
+    size_t off;           /* 游标：下一未读字节（恒 ≤ len） */
+    int op;               /* fr_dec_next 取到的行 opcode（fr_op_t 值） */
+    uint8_t asset_kind;   /* asset 行 kind（FR_ASSET_KIND_*；非 asset 行为 0） */
+    int err;              /* 粘滞错误码（FR_DEC_ERR_*；0=无） */
+    size_t err_off;       /* 错误现场偏移（0 起计） */
+    /* 内部游标（调用方不读写） */
+    const uint8_t *ft;    /* 当前期望字段的类型（静态表内推进） */
+    uint8_t nfields;      /* 当前行剩余字段数 */
+    uint32_t pending_len; /* 紧邻前一个 u32 字段值（FR_T_DATA 的长度来源） */
+} fr_dec;
+
+void fr_dec_init(fr_dec *d, const uint8_t *buf, size_t len);
+int fr_dec_next(fr_dec *d);
+uint8_t fr_dec_u8(fr_dec *d);
+uint32_t fr_dec_u32(fr_dec *d);
+float fr_dec_f32(fr_dec *d);
+double fr_dec_f64(fr_dec *d);
+int fr_dec_rgba8(fr_dec *d, fr_rgba8 *out);
+/* 以下出参型访问器返回 0 成功 / -1 失败（d->err 记码）；
+ * cap 口径：str/variant STR 含 NUL 位（载荷 n 须 ≤ cap-1）；pts 的 cap 按
+ * float 元素计（须容 2*n 点坐标）；args 的 sbuf 按 scap 字节/条步进共 argc 条 */
+int fr_dec_str(fr_dec *d, char *out, uint32_t cap);
+int fr_dec_pts(fr_dec *d, float *out, uint32_t cap, uint32_t *n);
+int fr_dec_data(fr_dec *d, const uint8_t **out, uint32_t *n);
+int fr_dec_variant(fr_dec *d, fr_variant *out, char *sbuf, uint32_t scap);
+int fr_dec_args(fr_dec *d, fr_variant *out, uint32_t vcap, char *sbuf, uint32_t scap, uint32_t *argc);
+
 #ifdef __cplusplus
 }
 #endif

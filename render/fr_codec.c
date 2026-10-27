@@ -600,3 +600,365 @@ int fr_encode_d_crc(fr_buf *b, uint32_t crc) {
     }
     return 0;
 }
+
+
+/* ---- 行级解码（B4 生成）：字段类型静态表 + 游标式解码器 ---- */
+
+enum {
+    FR_T_U8, FR_T_U32, FR_T_F32, FR_T_F64, FR_T_RGBA8,
+    FR_T_STR, FR_T_VARIANT, FR_T_PTS, FR_T_DATA, FR_T_ARGS
+};
+
+static const uint8_t fr_seq_dt[] = {FR_T_F32};
+static const uint8_t fr_seq_ev[] = {FR_T_U32, FR_T_STR, FR_T_U8, FR_T_ARGS};
+static const uint8_t fr_seq_call[] = {FR_T_U32, FR_T_STR, FR_T_U8, FR_T_ARGS};
+static const uint8_t fr_seq_timer[] = {FR_T_U32, FR_T_U32};
+static const uint8_t fr_seq_rngc[] = {FR_T_U32};
+static const uint8_t fr_seq_st[] = {FR_T_U32, FR_T_STR, FR_T_VARIANT};
+static const uint8_t fr_seq_err[] = {FR_T_STR};
+static const uint8_t fr_seq_clear[] = {FR_T_RGBA8};
+static const uint8_t fr_seq_draw[] = {FR_T_U32, FR_T_U32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_RGBA8};
+static const uint8_t fr_seq_print[] = {FR_T_U32, FR_T_STR, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_RGBA8};
+static const uint8_t fr_seq_rect[] = {FR_T_U8, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_RGBA8};
+static const uint8_t fr_seq_line[] = {FR_T_PTS, FR_T_F32, FR_T_RGBA8};
+static const uint8_t fr_seq_poly[] = {FR_T_U8, FR_T_PTS, FR_T_RGBA8};
+static const uint8_t fr_seq_circle[] = {FR_T_U8, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_U32, FR_T_RGBA8};
+static const uint8_t fr_seq_arc[] = {FR_T_U8, FR_T_U8, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_U32, FR_T_RGBA8};
+static const uint8_t fr_seq_points[] = {FR_T_PTS, FR_T_F32, FR_T_RGBA8};
+static const uint8_t fr_seq_rt[] = {FR_T_U32};
+static const uint8_t fr_seq_scissor[] = {FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32};
+static const uint8_t fr_seq_s_crc[] = {FR_T_U32};
+static const uint8_t fr_seq_d_crc[] = {FR_T_U32};
+static const uint8_t fr_seq_asset_image[] = {FR_T_U32, FR_T_U32, FR_T_U32, FR_T_U32, FR_T_DATA};
+static const uint8_t fr_seq_asset_canvas[] = {FR_T_U32, FR_T_U32, FR_T_U32};
+static const uint8_t fr_seq_asset_quad[] = {FR_T_U32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32, FR_T_F32};
+static const uint8_t fr_seq_asset_font[] = {FR_T_U32, FR_T_F32, FR_T_U32, FR_T_DATA};
+
+typedef struct { const uint8_t *seq; uint8_t n; } fr_op_meta;
+static const fr_op_meta fr_ops_meta[] = {
+    {fr_seq_dt, 1},
+    {NULL, 0}, /* asset: fr_dec_next 按 kind 分派 */
+    {fr_seq_ev, 4},
+    {fr_seq_call, 4},
+    {fr_seq_timer, 2},
+    {fr_seq_rngc, 1},
+    {fr_seq_st, 3},
+    {fr_seq_err, 1},
+    {fr_seq_clear, 1},
+    {fr_seq_draw, 10},
+    {fr_seq_print, 8},
+    {fr_seq_rect, 9},
+    {fr_seq_line, 3},
+    {fr_seq_poly, 3},
+    {fr_seq_circle, 6},
+    {fr_seq_arc, 9},
+    {fr_seq_points, 3},
+    {fr_seq_rt, 1},
+    {fr_seq_scissor, 4},
+    {fr_seq_s_crc, 1},
+    {fr_seq_d_crc, 1},
+};
+
+static int fr_dec_fail(fr_dec *d, int code, size_t off)
+{
+    if (d->err == 0) { /* 粘滞：首错为准 */
+        d->err = code;
+        d->err_off = off;
+    }
+    return code;
+}
+
+/* 剩余字节够读 n 个：不足即记 FR_DEC_ERR_TRUNCATED 并返回 -1。
+ * 不变式 off ≤ len 恒成立（游标只在 need 通过后推进），故只比差防回绕 */
+static int fr_dec_need(fr_dec *d, size_t n)
+{
+    if (n > d->len - d->off) {
+        fr_dec_fail(d, FR_DEC_ERR_TRUNCATED, d->off);
+        return -1;
+    }
+    return 0;
+}
+
+/* 当前字段存在且类型为 t：否则记 FR_DEC_ERR_TYPE（顺序错/行已读完）并返回 -1 */
+static int fr_dec_field(fr_dec *d, uint8_t t)
+{
+    if (d->nfields == 0 || *d->ft != t) {
+        fr_dec_fail(d, FR_DEC_ERR_TYPE, d->off);
+        return -1;
+    }
+    return 0;
+}
+
+static void fr_dec_take(fr_dec *d, size_t n)
+{
+    d->off += n;
+}
+
+static void fr_dec_field_done(fr_dec *d)
+{
+    d->ft++;
+    d->nfields--;
+}
+
+void fr_dec_init(fr_dec *d, const uint8_t *buf, size_t len)
+{
+    d->p = buf;
+    d->len = len;
+    d->off = 0;
+    d->op = -1;
+    d->asset_kind = 0;
+    d->err = 0;
+    d->err_off = 0;
+    d->ft = NULL;
+    d->nfields = 0;
+    d->pending_len = 0;
+}
+
+int fr_dec_next(fr_dec *d)
+{
+    static const struct {
+        const uint8_t *seq;
+        uint8_t n;
+    } ak[] = {
+        {fr_seq_asset_image, (uint8_t)sizeof fr_seq_asset_image},
+        {fr_seq_asset_canvas, (uint8_t)sizeof fr_seq_asset_canvas},
+        {fr_seq_asset_quad, (uint8_t)sizeof fr_seq_asset_quad},
+        {fr_seq_asset_font, (uint8_t)sizeof fr_seq_asset_font},
+    };
+    uint8_t op;
+
+    if (d->err) {
+        return d->err;
+    }
+    if (d->nfields != 0) { /* 上一行字段未读完 */
+        return fr_dec_fail(d, FR_DEC_ERR_ROW, d->off);
+    }
+    if (d->off >= d->len) {
+        return 0; /* 流结束 */
+    }
+    op = d->p[d->off];
+    if (op >= sizeof fr_ops_meta / sizeof fr_ops_meta[0]) {
+        return fr_dec_fail(d, FR_DEC_ERR_OP, d->off);
+    }
+    d->op = (int)op;
+    d->off++;
+    if (op == FR_OP_ASSET) { /* kind 字节就地消费，字段序按 kind 分派 */
+        uint8_t k;
+        if (fr_dec_need(d, 1) != 0) {
+            return d->err;
+        }
+        k = d->p[d->off];
+        if (k >= sizeof ak / sizeof ak[0]) {
+            return fr_dec_fail(d, FR_DEC_ERR_OP, d->off);
+        }
+        d->off++;
+        d->asset_kind = k;
+        d->ft = ak[k].seq;
+        d->nfields = ak[k].n;
+        return 1;
+    }
+    d->ft = fr_ops_meta[op].seq;
+    d->nfields = fr_ops_meta[op].n;
+    return 1;
+}
+
+uint8_t fr_dec_u8(fr_dec *d)
+{
+    uint8_t v;
+    if (d->err || fr_dec_field(d, FR_T_U8) != 0 || fr_dec_need(d, 1) != 0) {
+        return 0;
+    }
+    v = d->p[d->off];
+    fr_dec_take(d, 1);
+    fr_dec_field_done(d);
+    return v;
+}
+
+uint32_t fr_dec_u32(fr_dec *d)
+{
+    uint32_t v;
+    if (d->err || fr_dec_field(d, FR_T_U32) != 0 || fr_dec_need(d, 4) != 0) {
+        return 0;
+    }
+    memcpy(&v, d->p + d->off, 4);
+    d->pending_len = v; /* FR_T_DATA 约定：长度 = 紧邻前一个 u32 字段值 */
+    fr_dec_take(d, 4);
+    fr_dec_field_done(d);
+    return v;
+}
+
+float fr_dec_f32(fr_dec *d)
+{
+    float v;
+    if (d->err || fr_dec_field(d, FR_T_F32) != 0 || fr_dec_need(d, 4) != 0) {
+        return 0.0f;
+    }
+    memcpy(&v, d->p + d->off, 4);
+    fr_dec_take(d, 4);
+    fr_dec_field_done(d);
+    return v;
+}
+
+double fr_dec_f64(fr_dec *d)
+{
+    double v;
+    if (d->err || fr_dec_field(d, FR_T_F64) != 0 || fr_dec_need(d, 8) != 0) {
+        return 0.0;
+    }
+    memcpy(&v, d->p + d->off, 8);
+    fr_dec_take(d, 8);
+    fr_dec_field_done(d);
+    return v;
+}
+
+int fr_dec_rgba8(fr_dec *d, fr_rgba8 *out)
+{
+    if (d->err || fr_dec_field(d, FR_T_RGBA8) != 0 || fr_dec_need(d, 4) != 0) {
+        return -1;
+    }
+    memcpy(out, d->p + d->off, 4); /* 4×u8 无填充，与 fr_put_rgba8 对称 */
+    fr_dec_take(d, 4);
+    fr_dec_field_done(d);
+    return 0;
+}
+
+int fr_dec_str(fr_dec *d, char *out, uint32_t cap)
+{
+    uint32_t n;
+    if (d->err || fr_dec_field(d, FR_T_STR) != 0 || fr_dec_need(d, 4) != 0) {
+        return -1;
+    }
+    memcpy(&n, d->p + d->off, 4);
+    if (cap == 0 || n > cap - 1) { /* 出参含 NUL 位 */
+        fr_dec_fail(d, FR_DEC_ERR_CAP, d->off);
+        return -1;
+    }
+    fr_dec_take(d, 4);
+    if (fr_dec_need(d, (size_t)n) != 0) {
+        return -1;
+    }
+    memcpy(out, d->p + d->off, n);
+    out[n] = '\0';
+    fr_dec_take(d, n);
+    fr_dec_field_done(d);
+    return 0;
+}
+
+int fr_dec_pts(fr_dec *d, float *out, uint32_t cap, uint32_t *n)
+{
+    uint32_t np, i;
+    if (d->err || fr_dec_field(d, FR_T_PTS) != 0 || fr_dec_need(d, 4) != 0) {
+        return -1;
+    }
+    memcpy(&np, d->p + d->off, 4);
+    if (np > cap / 2) { /* cap 按 float 元素计；先比 cap 防 (size_t)np*8 回绕 */
+        fr_dec_fail(d, FR_DEC_ERR_CAP, d->off);
+        return -1;
+    }
+    fr_dec_take(d, 4);
+    if (fr_dec_need(d, (size_t)np * 8) != 0) { /* 2np 个量化 f32，x/y 交替 */
+        return -1;
+    }
+    for (i = 0; i < 2 * np; i++) {
+        memcpy(out + i, d->p + d->off, 4);
+        d->off += 4;
+    }
+    fr_dec_field_done(d);
+    *n = np;
+    return 0;
+}
+
+int fr_dec_data(fr_dec *d, const uint8_t **out, uint32_t *n)
+{
+    uint32_t len;
+    if (d->err || fr_dec_field(d, FR_T_DATA) != 0) {
+        return -1;
+    }
+    len = d->pending_len; /* 零拷贝：指针指向输入缓冲 */
+    if (fr_dec_need(d, (size_t)len) != 0) {
+        return -1;
+    }
+    *out = d->p + d->off;
+    *n = len;
+    fr_dec_take(d, len);
+    fr_dec_field_done(d);
+    return 0;
+}
+
+/* 变体读取内部形：不做字段校验/推进（fr_dec_args 的变长尾复用） */
+static int fr_dec_variant_inner(fr_dec *d, fr_variant *out, char *sbuf, uint32_t scap)
+{
+    uint8_t tag;
+    if (fr_dec_need(d, 1) != 0) {
+        return -1;
+    }
+    tag = d->p[d->off];
+    fr_dec_take(d, 1);
+    out->tag = tag;
+    out->str = NULL;
+    out->num = 0.0;
+    if (tag == FR_VARIANT_TAG_NUM || tag == FR_VARIANT_TAG_BOOL) {
+        if (fr_dec_need(d, 8) != 0) { /* 量化 f64 载荷 */
+            return -1;
+        }
+        memcpy(&out->num, d->p + d->off, 8);
+        fr_dec_take(d, 8);
+    } else if (tag == FR_VARIANT_TAG_STR) {
+        uint32_t n;
+        if (fr_dec_need(d, 4) != 0) {
+            return -1;
+        }
+        memcpy(&n, d->p + d->off, 4);
+        fr_dec_take(d, 4);
+        if (scap == 0 || n > scap - 1) { /* sbuf 含 NUL 位 */
+            fr_dec_fail(d, FR_DEC_ERR_CAP, d->off);
+            return -1;
+        }
+        if (fr_dec_need(d, (size_t)n) != 0) {
+            return -1;
+        }
+        memcpy(sbuf, d->p + d->off, n);
+        sbuf[n] = '\0';
+        out->str = sbuf;
+        fr_dec_take(d, n);
+    } else {
+        fr_dec_fail(d, FR_DEC_ERR_TYPE, d->off);
+        return -1;
+    }
+    return 0;
+}
+
+int fr_dec_variant(fr_dec *d, fr_variant *out, char *sbuf, uint32_t scap)
+{
+    if (d->err || fr_dec_field(d, FR_T_VARIANT) != 0) {
+        return -1;
+    }
+    if (fr_dec_variant_inner(d, out, sbuf, scap) != 0) {
+        return -1;
+    }
+    fr_dec_field_done(d);
+    return 0;
+}
+
+int fr_dec_args(fr_dec *d, fr_variant *out, uint32_t vcap, char *sbuf, uint32_t scap, uint32_t *argc)
+{
+    uint8_t na, i;
+    if (d->err || fr_dec_field(d, FR_T_ARGS) != 0 || fr_dec_need(d, 1) != 0) {
+        return -1;
+    }
+    na = d->p[d->off];
+    fr_dec_take(d, 1);
+    if (na > vcap) { /* u8 argc 值域 ≤255；出参数组须容下 */
+        fr_dec_fail(d, FR_DEC_ERR_CAP, d->off);
+        return -1;
+    }
+    for (i = 0; i < na; i++) { /* sbuf 按 scap 字节/条步进（调用方按 [n][scap] 布置） */
+        if (fr_dec_variant_inner(d, &out[i], sbuf + (size_t)i * scap, scap) != 0) {
+            return -1;
+        }
+    }
+    *argc = na;
+    fr_dec_field_done(d);
+    return 0;
+}
+

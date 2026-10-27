@@ -58,9 +58,20 @@ def test_c_compile_smoke(tmp_path):
     cc = shutil.which("gcc") or shutil.which("clang")
     if not cc:
         pytest.skip("no C compiler on PATH")
-    for name in ("fr_codec.c", "fr_selftest.c"):  # 两个生成 TU 都须零警告过 -Werror
+    tus = ("fr_codec.c", "fr_session.c", "fr_selftest.c")  # 生成 TU + 手写会话层 + 生成自检
+    for name in tus:  # 全部 TU 零警告过 -Werror
         r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror", "-c",
                             os.path.join(_ROOT, "render", name),
                             "-o", str(tmp_path / (name + ".o"))],
                            capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
+    # 链接并真跑 selftest：emit 字节对账 + golden 解码-重编码闭环（B4）
+    exe = str(tmp_path / ("st.exe" if os.name == "nt" else "st"))
+    r = subprocess.run([cc, "-std=c99", "-Wall", "-Werror"] +
+                       [os.path.join(_ROOT, "render", name) for name in tus] +
+                       ["-o", exe], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    r = subprocess.run([exe], capture_output=True, text=True)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert "C EMIT OK %d rows" % len(fc.self_test_samples()) in r.stdout
+    assert "C DECODE OK" in r.stdout
