@@ -276,6 +276,141 @@ def test_state_crc_sim_replay(tmp_path):
         assert ln == "SIM_CRC %d ok" % i, (ln, "帧 %d 重演 s_crc 不一致" % i)
 
 
+# ---------------- B6 Task 2：diff 档（影子镜像 st 物理行，FR_LOGLEVEL=full） ----------------
+
+def _log_rows(rows):
+    """帧块行 → log 段行（st/err，full 级堆 diff 档产出，按块内原序）。"""
+    return [ln for ln in rows if ln.startswith("st ") or ln.startswith("err ")]
+
+
+def test_state_diff_rows(tmp_path):
+    """测试 14（B6 Task 2）：FR_LOGLEVEL=full 注入 tee → 帧 0 首见全发
+    （kernel.state/hero 全槽 + table 引用槽 err unsupported）、帧 1 增量
+    （tick 脏槽 + clicks 首插扩容 rehash 行 + 点击子表全发 + hero.x 脏槽）；
+    档位隔离（FR_LOGLEVEL 未设 → 无 st/err 行）；双跑逐字节一致；fr_check 过。"""
+    out = str(tmp_path / "diff.fr")
+    r = _run_demo(env_capture=True, env_extra={"FR_LOGLEVEL": "full"},
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    with open(out, "rb") as f:
+        lines = f.read().decode("utf-8").splitlines()
+    blocks = _frame_blocks(lines)
+
+    # 头行 loglvl=full（会话声明档位，fr_session 三档域）
+    assert lines[0].split()[4] == "full", lines[0]
+
+    # 帧 0 首见全发（收集点 = update 后 present，tick 已 +1）：根表（id=1）
+    # 四槽——tick/banner 可序列化发 st，hero/clicks 槽为 table 引用 → err
+    # st-unsupported（拍板：table 引用槽首版按 err 记，ref 形态留 B6+）
+    log0 = _log_rows(blocks[0])
+    assert 'st 1 "tick" num 1.000000' in log0, log0
+    assert 'st 1 "banner" str "L0"' in log0, log0
+    assert 'err "st-unsupported 1 hero tab"' in log0, log0
+    assert 'err "st-unsupported 1 clicks tab"' in log0, log0
+    # hero（id=3，clicks id=2 先分但空表无行）：三数值槽全发
+    assert 'st 3 "hp" num 87.000000' in log0, log0
+    dt = 0.016667
+    assert 'st 3 "x" num %.6f' % qf(10.0 + 60.0 * dt) in log0, log0
+    assert 'st 3 "y" num 20.000000' in log0, log0
+
+    # 帧 1 增量：tick/hero.x 脏槽（qf 域）
+    log1 = _log_rows(blocks[1])
+    assert 'st 1 "tick" num 2.000000' in log1, log1
+    assert 'st 3 "x" num %.6f' % qf(10.0 + 60.0 * dt * 2) in log1, log1
+    # clicks 首插 {x=200,y=100}：LuaJIT 空表首插走 rehashtab（asize 0→3，
+    # lj_tab.c:452）→ 表重建行 + 全槽重发；数组部下标 = 整数键原值
+    #（clicks[1] 物理落 [1]，1-based Lua 数组空置 [0]——实测定形），槽为
+    # table → err + 子表（id=4）全发 x/y
+    assert 'err "st-rehash 2 3 0"' in log1, log1
+    assert 'err "st-unsupported 2 [1] tab"' in log1, log1
+    assert 'st 4 "x" num 200.000000' in log1, log1
+    assert 'st 4 "y" num 100.000000' in log1, log1
+    # 增量语义：帧 1 的 log 行整体少于帧 0（脏槽子集 + 新表）
+    assert len(log1) < len(log0), (len(log0), len(log1), log0, log1)
+
+    # 帧 2：banner 切 "KEY"（keypressed 注入）——str 值内容变化须检出
+    #（diff 槽指纹对 str 补内容 CRC；CRC 档的 tag 位口径逮不住，自审登记）
+    log2 = _log_rows(blocks[2])
+    assert 'st 1 "banner" str "KEY"' in log2, log2
+    assert 'st 1 "tick" num 3.000000' in log2, log2
+
+    # 帧 3：只 tick/hero.x 在变（clicks 稳定无行）
+    log3 = _log_rows(blocks[3])
+    assert 'st 1 "tick" num 4.000000' in log3, log3
+    assert not any(ln.startswith('st 4 ') for ln in log3), log3
+
+    # st/err 行 canonical（cmd.tbl 签名：st obj u32 / key str / val variant）
+    chk = subprocess.run(
+        [sys.executable, os.path.join(_ROOT, "tools", "fr_check.py"), out],
+        capture_output=True, timeout=60, cwd=_ROOT)
+    assert chk.returncode == 0, (chk.stdout, chk.stderr)
+
+    # 档位隔离：FR_LOGLEVEL 未设 → 无 st/err 行（base 档不产 diff 行）
+    out_base = str(tmp_path / "base.fr")
+    r_base = _run_demo(env_capture=True,
+                       extra=_tee_args(out_base) + ["--inject-click", "200,100",
+                                                    "--inject-key", "return"])
+    assert r_base.returncode == 0, (r_base.returncode, r_base.stderr)
+    with open(out_base, "rb") as f:
+        base_lines = f.read().decode("utf-8").splitlines()
+    assert not any(ln.startswith("st ") or ln.startswith("err ")
+                   for ln in base_lines), "base 档不应有 st/err 行"
+    assert base_lines[0].split()[4] == "base", base_lines[0]
+
+    # 双跑确定性（含 st/err 行与对象 id 分配序）
+    out2 = str(tmp_path / "diff2.fr")
+    r2 = _run_demo(env_capture=True, env_extra={"FR_LOGLEVEL": "full"},
+                   extra=_tee_args(out2) + ["--inject-click", "200,100",
+                                            "--inject-key", "return"])
+    assert r2.returncode == 0, (r2.returncode, r2.stderr)
+    with open(out, "rb") as fa, open(out2, "rb") as fb:
+        assert fa.read() == fb.read(), "full 档两次运行不逐字节一致"
+
+
+def test_state_diff_sim(tmp_path):
+    """测试 15（B6 Task 2）：full 流 --sim（FR_LOGLEVEL=full 重演侧同档收集）
+    → SIM 全 MATCH（st/err log 行纳入比对集后重演仍逐行一致——状态演化重演
+    全对的强判据）；SIM_CRC ok；篡改 st 行 → MISMATCH（比对集确实含 st 的
+    反向自证）。"""
+    out = str(tmp_path / "sim.fr")
+    r = _run_demo(env_capture=True, env_extra={"FR_LOGLEVEL": "full"},
+                  extra=_tee_args(out) + ["--inject-click", "200,100",
+                                          "--inject-key", "return"])
+    assert r.returncode == 0, (r.returncode, r.stderr)
+
+    env = os.environ.copy()
+    env["FR_LOGLEVEL"] = "full"
+    rr = subprocess.run([sys.executable,
+                         os.path.join(_ROOT, "tools", "fr_render.py"),
+                         "--sim", out], capture_output=True, timeout=120,
+                        cwd=_ROOT, env=env)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
+    sim_lines = rr.stdout.decode("utf-8").splitlines()
+    assert ("SIM %d MATCH" % 0) in sim_lines, sim_lines
+    for i in range(4):
+        assert ("SIM %d MATCH" % i) in sim_lines, sim_lines
+        assert ("SIM_CRC %d ok" % i) in sim_lines, sim_lines
+    assert "SIM SUMMARY 4 4 0 0" in sim_lines, sim_lines
+
+    # 反向自证：篡改帧 0 的 st 行值 → 重演侧再生行与篡改行不符 → MISMATCH
+    #（若 st 行不在比对集，篡改会被静默放过）
+    with open(out, "rb") as f:
+        raw = f.read().decode("utf-8")
+    assert 'st 1 "tick" num 1.000000' in raw, raw[:400]
+    mangled = raw.replace('st 1 "tick" num 1.000000', 'st 1 "tick" num 9.000000')
+    mangled_path = str(tmp_path / "mangled.fr")
+    with open(mangled_path, "wb") as f:
+        f.write(mangled.encode("utf-8"))
+    rm = subprocess.run([sys.executable,
+                         os.path.join(_ROOT, "tools", "fr_render.py"),
+                         "--sim", mangled_path], capture_output=True, timeout=120,
+                        cwd=_ROOT, env=env)
+    assert rm.returncode == 1, (rm.returncode, rm.stdout, rm.stderr)
+    m_lines = rm.stdout.decode("utf-8").splitlines()
+    assert any(ln.startswith("SIM 0 MISMATCH") for ln in m_lines), m_lines
+
+
 # ---------------- B4 阶段三：真字节登记 + 真纹理物化 ----------------
 
 def test_asset_real_bytes(tmp_path):
