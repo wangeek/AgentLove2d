@@ -23,6 +23,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 
 - 运行 LÖVE：`love2d/love-11.5-win64/love.exe <游戏目录>`
 - L0 产流样机（B3b）：`love2d/love-11.5-win64/love.exe l0 --demo --frames N --fixed-dt X --sha <表指纹> --seed S --out <path>`（表指纹=`tools.fr_gen.tbl` 的 `tbl_sha256(tbl.parse(表文本))`；golden 在 `tests/golden/l0_session.fr`）
+- **fork 构建（B4 起）**：megasource 在 `megasource/`（11.5 tag，不入库）；增量构建 `cmake --build megasource\build115 --config Release`；环境变量 `CMAKE_POLICY_VERSION_MINIMUM=3.5` 必设（openal 内部 cmake 用）；自建运行时在 `megasource\build115\love\Release\`
 - Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`

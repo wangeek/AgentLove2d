@@ -1,5 +1,24 @@
 # B4 Task 1（线 A）：fork 构建可行性探针报告
 
+## 附录 A：里程碑一实际构建记录（2026-10-27，全量通过）
+
+```
+git clone --depth 1 https://gh-proxy.com/https://github.com/love2d/megasource.git megasource
+git -C megasource config url."https://gh-proxy.com/https://github.com/".insteadOf "https://github.com/"
+git -C megasource submodule update --init --depth 1        # libs 依赖齐（含 SDL2 2.28.5/mpg123-1.25.6）
+robocopy love2d\love-src megasource\libs\love /E           # 基线 love 入官方布局（保留 .git）
+cmake -B megasource\build115 -S megasource -G "Visual Studio 17 2022" "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+$env:CMAKE_POLICY_VERSION_MINIMUM='3.5'                    # openal native-tools 内部 cmake 需要
+cmake --build megasource\build115 --config Release -- -m   # 全量通过，约 9 分钟
+```
+
+要点：
+- megasource **master 是 love12/SDL3 布局**（默认 `LOVE_USE_SDL3=ON`、无 mpg123）——构建 11.5 必须 checkout **tag `11.5`**；切换后 libs 自动变为 11.5 依赖集（mpg123 回归、SDL3/harfbuzz 消失）。
+- PowerShell 传参坑：`-DX=3.5` 必须整体加引号（被拆成 "3" 的报错即此）。
+- CMake 4.x 对 openal 内部 cmake（native-tools/bin2h）的旧 policy 墙：设同名环境变量即可（子 cmake 继承）。
+- 产物：`megasource\build115\love\Release\`（love.exe + love.dll 4.31MB + lua51/SDL2/OpenAL32/mpg123 DLL）。
+- **行为等价实证**：自建 love.exe 跑 L0（`--demo --frames 4 --fixed-dt 0.016667 --sha <指纹> --seed 3056735`）产物与官方运行时 golden（tests/golden/l0_session.fr）**逐字节一致**（2144B）。
+
 - 日期：2026-10-27
 - 探针对象：`love2d/love-src/`（gitignored，盘上在位；git 仓库 HEAD = `6eb8d54`，`git describe` = `11.5`，与任务书一致）
 - 工作区：`D:\Lab\AgentLove2d` @ main `79aaa81`（探针时 HEAD，未含本报告）
