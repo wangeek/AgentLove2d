@@ -448,3 +448,9 @@ static int fr_qf(double v, float *out) {
 - **依赖顺序**：Task 3 的 gyl 验证在 Task 4——因为本机无编译器；若 gyl 不可达，Task 4 Step 1 阻塞上报（不许静默跳过——这是本批唯一的真实验证）。
 - **类型一致性**：fr_variant 三字段（tag/num/str）与 Python variant 三态（num 裸数/str 单元组/bool）映射在 Task 3 selftest 构造中体现；签名映射表与 cmd.tbl signature 一一核对过（ev/call 的 args... 在签名末位——C 侧置于参数表末位）。
 - **无占位符**：C emit 模板要点已给全（fr_qf 实现、辅助族清单、selftest 结构）；断言参数序若与表不符修测试不修表——已写明。
+
+**已知取舍台账（2026-10-27 B3a 终审后补登记，均为确认取舍非欠账）**：
+1. asset hex 解析宽松进严格出——`bytes.fromhex` 容大写，canonical 恒小写；fr-check 幂等校验兜住（fr_codec_gen.py `_asset_hex`）。
+2. fr_dump 手写参数解析窄缝——`--frames` 缺值静默不过滤、未知旗标落路径、多位置参数末位覆盖（fr_dump.py main）；行为可预期，代价是 rc=2 面窄。
+3. `_validate_session` 只查结构不查行级类型——行级 ValueError 由 dump 调用处包装透传（fr_session.py 校验函数注释）。
+4. 环境：C 编译冒烟依赖本机 MinGW（conftest 注入）或 gyl——异机无编译器时优雅 SKIP（可见非静默）。
