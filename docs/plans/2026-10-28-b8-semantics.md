@@ -26,28 +26,28 @@
 
 **Files:** fork `fr_capture.h/.cpp`、`wrap_Graphics.cpp`（w_setColor/w_setFont/w_setLineWidth/w_setBackgroundColor 挂钩）
 
-- [ ] 失败测试：demo kernel 加原生 setColor/print/setFont 调用序列（不带 ir_graphics 适配层直调 love.graphics）→ tee 会话 print/rect 行 color/font 参数反映状态序列
-- [ ] 实现：色状态缓存（捕获钩记录当前色，绘制行 emit 时读取）；font 同构；lineWidth 同构
-- [ ] Commit `feat(fr): 状态类捕获——setColor/setFont/setLineWidth 状态折参数`
+- [x] 失败测试：demo kernel 加原生 setColor/print/setFont 调用序列（不带 ir_graphics 适配层直调 love.graphics）→ tee 会话 print/rect 行 color/font 参数反映状态序列（✅ test_native_api_state_capture，fork bb6367a）
+- [x] 实现：色状态缓存（捕获钩记录当前色，绘制行 emit 时读取）；font 同构；lineWidth 同构（✅ 96 绿）
+- [x] Commit `feat(fr): 状态类捕获——setColor/setFont/setLineWidth 状态折参数`
 
 ### Task 2: 绘制类补全（line/circle/polygon/arc/points 挂钩）（TDD）
 
-- [ ] cmd.tbl 已有 op（line/poly/circle/arc/points 签名已封版）——w_line/w_circle/w_polygon/w_arc/w_points 挂捕获钩（模式照 w_rectangle：参数解析复用+结算坐标+emit 行+抑制真执行）
-- [ ] 失败测试：demo kernel 画五图元 → tee 会话含五行
-- [ ] Commit `feat(fr): 绘制类五 op 捕获钩（cmd.tbl 封版签名）`
+- [x] cmd.tbl 已有 op（line/poly/circle/arc/points 签名已封版）——w_line/w_circle/w_polygon/w_arc/w_points 挂捕获钩（模式照 w_rectangle：参数解析复用+结算坐标+emit 行+抑制真执行）（✅ test_native_draw_ops，fork 1b78038/根 444f517）
+- [x] 失败测试：demo kernel 画五图元 → tee 会话含五行（✅ 97 绿）
+- [x] Commit `feat(fr): 绘制类五 op 捕获钩（cmd.tbl 封版签名）`
 
 ### Task 3: 目标/裁剪/Shader 边界（setCanvas/setScissor/setShader）（TDD）
 
-- [ ] setCanvas：切真执行（语义替代版仅登记）；`rt` 行 emit；setScissor 同构（`scissor` 行）
-- [ ] setShader/newShader：err 行登记 + 真执行（语义边界如实）；getShader 透传
-- [ ] 失败测试：demo 切 canvas 画两帧切回 → rt 行序正确
-- [ ] Commit `feat(fr): rt/scissor 状态行 + Shader err 边界`
+- [x] setCanvas：切真执行（语义替代版仅登记）；`rt` 行 emit；setScissor 同构（`scissor` 行）（✅ fork 08bdeb3——捕获态零真执行；**rt 0=回放会话基线**：exec 侧盲切默认缓冲会劫持验证帧画布，两回放驱动进出配对设置基线）
+- [x] setShader/newShader：err 行登记 + 真执行（语义边界如实）；getShader 透传（✅ w_setShader err 边界含 nil 复位；newShader 真对象构造无钩——边界在使用点 setShader）
+- [x] 失败测试：demo 切 canvas 画两帧切回 → rt 行序正确（✅ test_rt_scissor_shader，98 绿）
+- [x] Commit `feat(fr): rt/scissor 状态行 + Shader err 边界`（附：**观察侧围栏** `_frCaptureSuspend/Resume`——rig 验证帧真 Canvas 切换不进内核会话流）
 
 ### Task 4: 自身闭环测试 + newgame 冒烟
 
-- [ ] 全 API demo：kernel 直调 love.graphics.* 全清单（验收靶 20 API）跑 FR_CAPTURE=1 → 不崩溃、tee 会话完整、sim 重演 MATCH
-- [ ] **newgame 冒烟**（挂起任务的复测点）：FR_CAPTURE=1 --scenario test_world --smoke 90 → rc=0（崩溃消失即语义面覆盖成功；残余问题逐个登记）
-- [ ] 文档回写 + 终审
+- [x] 全 API demo：kernel 直调 love.graphics.* 全清单（验收靶 20 API）跑 FR_CAPTURE=1 → 不崩溃、tee 会话完整、sim 重演 MATCH（✅ `--api-parade` 独立通道（主 demo 逐行基线不漂）：test_api_parade_closed_loop——三类语义行齐全+变换栈（push/translate/scale）结算进世界坐标自证+查询透传（W=640 H=480 进 print 文本）；sim 同通道重演（fr-render --sim 透传 --api-parade）全帧 MATCH+SIM_CRC 双 ok。**顺带修正**：Shader err 行从 out 捕获流移入 log 段（cmd.tbl 封版语义：err 属 log、豁免 off 档）——`_frTakeErrRows` 独立缓冲+组装/重演两侧对齐）
+- [x] **newgame 冒烟**（挂起任务的复测点）：FR_CAPTURE=1 --scenario test_world --smoke 90 → rc=0（✅ 2026-10-28 实测：main_menu→world 12 heroes→world_intro 注册→rc=0，载入段崩溃消失）
+- [x] 文档回写 + 终审（design.md B7a/B8 落行；AGENTS.md 计数/命令更新；本计划勾选）
 
 ---
 

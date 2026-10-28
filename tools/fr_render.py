@@ -3,7 +3,9 @@
 注入回放（B5 Task 2）。
 
 用法：python tools/fr_render.py <in.fr|in.frb>          离线回放（offline-replay）
-      python tools/fr_render.py --sim <in.fr>           严格档注入回放（demo --sim）
+      python tools/fr_render.py --sim <in.fr> [--api-parade]
+                                                          严格档注入回放（demo --sim；
+                                                          parade = 录制 rig 同通道重演）
 
 离线回放：驱动 fork 构建 love.exe 的 demo `--offline-replay` 模式
 （fr_offline_replay：读流 → 会话解包/解析 → capture_exec_row 同路径执行 →
@@ -35,30 +37,34 @@ def render(path, timeout=TIMEOUT):
                           capture_output=True, timeout=timeout, env=env, cwd=_ROOT)
 
 
-def sim(path, timeout=TIMEOUT):
+def sim(path, timeout=TIMEOUT, parade=False):
     """严格档注入回放一次（--sim）：FR_CAPTURE 必须=1（重演捕获再生 out 行，
-    demo 侧另有自查），与 render 的开关口径相反。"""
+    demo 侧另有自查），与 render 的开关口径相反。parade=True 透传
+    --api-parade——录制 rig 用了该通道时重演必须同通道（内核路径须一致）。"""
     if not os.path.isfile(FORK_LOVE):
         raise SystemExit("fr-render: fork love.exe 不存在：%s（先增量构建 megasource）" % FORK_LOVE)
     env = os.environ.copy()
     env["FR_CAPTURE"] = "1"
-    return subprocess.run([FORK_LOVE, DEMO, "--sim", os.path.abspath(path)],
-                          capture_output=True, timeout=timeout, env=env, cwd=_ROOT)
+    argv = [FORK_LOVE, DEMO, "--sim", os.path.abspath(path)]
+    if parade:
+        argv.append("--api-parade")
+    return subprocess.run(argv, capture_output=True, timeout=timeout, env=env, cwd=_ROOT)
 
 
 def main(argv):
-    if len(argv) == 3 and argv[1] == "--sim":
+    if len(argv) >= 3 and argv[1] == "--sim":
         mode, path = "sim", argv[2]
+        parade = "--api-parade" in argv[3:]  # 透传 demo 通道旗标（白名单制）
     elif len(argv) == 2:
-        mode, path = "render", argv[1]
+        mode, path, parade = "render", argv[1], False
     else:
-        print("用法: python tools/fr_render.py <in.fr|in.frb> | --sim <in.fr>", file=sys.stderr)
+        print("用法: python tools/fr_render.py <in.fr|in.frb> | --sim <in.fr> [--api-parade]", file=sys.stderr)
         return 2
     if not os.path.isfile(path):
         print("fr-render: 流文件不存在：%s" % path, file=sys.stderr)
         return 2
 
-    r = sim(path) if mode == "sim" else render(path)
+    r = sim(path, parade=parade) if mode == "sim" else render(path)
     err = r.stderr.decode("utf-8", "replace")
     if err:
         sys.stderr.write(err)

@@ -705,3 +705,49 @@ def test_rt_scissor_shader(tmp_path):
     # scissor off：setScissor() → 哨兵（-1 -1 -1 -1 或特殊标记）
     assert "scissor -1.000000 -1.000000 -1.000000 -1.000000" in text, \
         "setScissor() off 未产哨兵行"
+
+
+# ---------------- B8 Task 4：全 API 闭环 + newgame 冒烟 ----------------
+
+def test_api_parade_closed_loop(tmp_path):
+    """B8 T4 验收线①：--api-parade 直调 20 API 靶（newgame 实测调用面）→
+    不崩溃、会话三类语义行齐全（状态折参/状态行/边界登记），变换栈
+    （push/translate/scale）在挂钩时刻结算进世界坐标自证；sim 重演全帧
+    MATCH（录制/重演同代码路径——draw_kernel 单分派口）。"""
+    out = str(tmp_path / "parade.fr")
+    r = _run_demo(env_capture=True, extra=_tee_args(out) + ["--api-parade"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    text = open(out, "rb").read().decode("utf-8")
+
+    # 折参类：setColor→color、setLineWidth→width（真状态机，原生 0-1 域）
+    assert ("rect 0 40.000000 40.000000 40.000000 30.000000 0.000000 0.000000"
+            " 3.000000 255 0 0 255") in text, "rect 折参/变换结算缺失"
+    assert "line 2 25.000000 130.000000 145.000000 130.000000 3.000000 255 0 0 255" in text
+    # 变换结算锚（translate(10,10)*scale(1.5,1.5)）：circle(60,120)→(100,190)、
+    # poly 三点、arc(100,200)→(160,310)、points 两点（radius/w/h 直通口径）
+    assert "circle 0 100.000000 190.000000 20.000000 12 0 255 0 255" in text
+    assert "poly 0 3 70.000000 235.000000 100.000000 235.000000 85.000000 265.000000 0 255 0 255" in text
+    assert "arc 0 0 160.000000 310.000000 25.000000 0.000000 1.570796 10 0 0 255 255" in text
+    assert "points 2 205.000000 310.000000 220.000000 325.000000 1.000000 0 0 255 255" in text
+    # 资产类：draw/print（setFont 状态）+ 查询透传（getWidth 真值进文本）
+    assert "draw 1 0 200.000000 40.000000 0.000000 1.000000 1.000000" in text
+    assert 'print 2 "API" 12.000000 300.000000' in text
+    assert 'print 2 "W=640 H=480" 12.000000 340.000000' in text
+    # 状态行类：rt（canvas 段：蓝 clear + 青 rect 进 canvas）+ scissor 哨兵
+    assert "rt 3" in text and "rt 0" in text and "clear 0 0 255 255" in text
+    assert ("rect 0 8.000000 8.000000 48.000000 48.000000 0.000000 0.000000"
+            " 3.000000 0 255 255 255") in text
+    assert "scissor 50.000000 50.000000 200.000000 100.000000" in text
+    assert "scissor -1.000000 -1.000000 -1.000000 -1.000000" in text
+    # 边界登记类：setShader err ×2/帧（设+复位）× 4 帧 = 8
+    assert text.count('err "st-unsupported shader no-ir') == 8, "Shader 边界 err 行计数"
+
+    # 闭环：sim 严格档重演——api-parade 流同通道重演（--api-parade 透传，
+    # 内核路径与录制一致）全帧 MATCH + s_crc/d_crc 双 ok
+    rr = subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_render.py"),
+                         "--sim", out, "--api-parade"],
+                        capture_output=True, timeout=120, cwd=_ROOT)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
+    sim_out = rr.stdout.decode("utf-8")
+    assert "SIM SUMMARY 4 4 0 0" in sim_out, sim_out
+    assert "s=ok d=ok" in sim_out and "s=mis" not in sim_out and "d=mis" not in sim_out, sim_out
