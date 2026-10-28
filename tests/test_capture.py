@@ -776,6 +776,10 @@ def test_asset_proxy_methods_and_forms(tmp_path):
     t = fd_ln.split()
     assert t[:4] == ["asset", "font", "4", "12.000000"], fd_ln
     assert t[4] == "00010203" * 8, fd_ln
+    # B12+ 字节池化：同字节异 size → 引用形态（=4，无重复 hex）
+    ref_ln = next(ln for ln in text.splitlines() if ln.startswith("asset font 5 "))
+    assert ref_ln == "asset font 5 14.000000 =4", ref_ln
+    assert 'print 5 "REF"' in text, "引用字体 print 行缺失"
     # blend 边界 err ×2/帧 ×4 帧（与 shader err 不同前缀，各自计数）
     assert text.count('err "st-unsupported blendmode no-ir') == 8, "blend err 计数漂移"
     assert text.count('err "st-unsupported shader no-ir') == 8, "shader err 计数漂移"

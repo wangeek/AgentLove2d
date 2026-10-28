@@ -25,6 +25,10 @@ def samples():
         ("asset", {"kind": KIND_QUAD, "id": 3, "x": 0.0, "y": 0.0, "w": 16.0, "h": 16.0,
                    "sw": 256.0, "sh": 256.0}),
         ("asset", {"kind": KIND_FONT, "id": 4, "size": 12.0, "data": b"fake-ttf"}),
+        # 注：v1.2.7 font 字节引用形态（=srcid）不进 selftest 样本集——C emit
+        # 不产引用（frb 引用编码只由 Python fr-as 写；C 仅离线解析读，手写层
+        # 处理），跨目标字节锚不涉引用；round-trip 归 Python 侧测试 + fork
+        # 离线解析实测（newgame 流）覆盖。
         ("ev", {"slot": 0, "type": "keypressed", "src": 0, "args": [("return",), (False,)]}),
         ("call", {"slot": 1, "fn": "hit", "depth": 1, "args": [203.0, 88.0]}),
         ("timer", {"slot": 2, "id": 1}),

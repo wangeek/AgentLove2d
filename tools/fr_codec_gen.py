@@ -172,8 +172,14 @@ def encode_row(op, fields):
         elif kind == ASSET_KIND_QUAD:  # quad：6×f32（x y w h sw sh，写入前量化）
             out.append(struct.pack("<6f", *(qf(fields[k]) for k in ("x", "y", "w", "h", "sw", "sh"))))
         elif kind == ASSET_KIND_FONT:  # font：f32 size, u32 len, TTF 字节
-            out.append(struct.pack("<fI", qf(fields["size"]), len(fields["data"])))
-            out.append(fields["data"])
+            # 引用形态（v1.2.7 字节池化）：len=0xFFFFFFFF + u32 src——复用
+            # src 资产的 TTF 字节（同字节跨字号；size 是本行物化参数）。
+            src = fields.get("font_src", 0)
+            if src:
+                out.append(struct.pack("<fII", qf(fields["size"]), 0xFFFFFFFF, src))
+            else:
+                out.append(struct.pack("<fI", qf(fields["size"]), len(fields["data"])))
+                out.append(fields["data"])
         else:
             raise ValueError("asset kind 非法: %r" % kind)
         return b"".join(out)
@@ -234,8 +240,14 @@ def decode_row(mv):
                 size, n = struct.unpack_from("<fI", mv, off)
                 off += 8
                 fields["size"] = qf(size)
-                fields["data"] = bytes(mv[off:off + n])
-                off += n
+                if n == 0xFFFFFFFF:  # 引用形态：u32 src（v1.2.7 字节池化）
+                    (src,) = struct.unpack_from("<I", mv, off)
+                    off += 4
+                    fields["font_src"] = src
+                    fields["data"] = b""
+                else:
+                    fields["data"] = bytes(mv[off:off + n])
+                    off += n
             else:
                 raise ValueError("asset kind 非法: %r" % kind)
             if off != len(mv):
@@ -374,6 +386,9 @@ def _render_asset(fields):
             toks.extend((str(int(fields["w"])), str(int(fields["h"]))))
         else:
             toks.append("%.6f" % qf(fields["size"]))
+        if fields.get("font_src", 0):  # 字节引用形态（v1.2.7）：=srcid
+            toks.append("=%d" % int(fields["font_src"]))
+            return toks
         hexed = fields["data"].hex()
         toks.append(hexed if hexed else "-")
     return toks
@@ -462,7 +477,12 @@ def _parse_asset(toks, pos):
             fields[key] = qf(float(take()))
     else:  # font
         fields["size"] = qf(float(take()))
-        fields["data"] = _asset_hex(take())
+        tok = take()
+        if tok.startswith("="):  # 字节引用形态（v1.2.7）：=srcid
+            fields["font_src"] = int(tok[1:])
+            fields["data"] = b""
+        else:
+            fields["data"] = _asset_hex(tok)
     return fields, pos
 
 
