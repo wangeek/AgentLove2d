@@ -46,7 +46,7 @@
 ### Task 4: 自身闭环测试 + newgame 冒烟
 
 - [x] 全 API demo：kernel 直调 love.graphics.* 全清单（验收靶 20 API）跑 FR_CAPTURE=1 → 不崩溃、tee 会话完整、sim 重演 MATCH（✅ `--api-parade` 独立通道（主 demo 逐行基线不漂）：test_api_parade_closed_loop——三类语义行齐全+变换栈（push/translate/scale）结算进世界坐标自证+查询透传（W=640 H=480 进 print 文本）；sim 同通道重演（fr-render --sim 透传 --api-parade）全帧 MATCH+SIM_CRC 双 ok。**顺带修正**：Shader err 行从 out 捕获流移入 log 段（cmd.tbl 封版语义：err 属 log、豁免 off 档）——`_frTakeErrRows` 独立缓冲+组装/重演两侧对齐）
-- [x] **newgame 冒烟**（挂起任务的复测点）：FR_CAPTURE=1 --scenario test_world --smoke 90 → rc=0（✅ 2026-10-28 实测：main_menu→world 12 heroes→world_intro 注册→rc=0，载入段崩溃消失）
+- [x] **newgame 冒烟**（挂起任务的复测点）：FR_CAPTURE=1 --scenario test_world --smoke 90 → **未过（终审裁定，2026-10-28）**。事实登记：FR_CAPTURE=1 下 4/4 SIGSEGV（RC=139，崩点=world_intro 注册后首帧，日志止于 5 行、无 smoke 总结 JSON）；无捕获对照 2/2 RC=0（90 帧 errors=0）——FR_CAPTURE 因果成立；newgame 仓自 2026-09-06 未变。静态排查：modal.lua 渲染 API 全在 20 靶覆盖内；newFont(路径) 形态在挂钩侧报 Lua 错且被游戏 pcall 吞（非崩溃源）；字体 FileData 形态未达（bundled NiuPix.ttf 存在，走路径形态）。崩溃源在覆盖面外，调试器三缺（lldb Python 桥坏/cdb 未装/无 procdump）暂无栈——B7+ 队列立项：先补调试工具拿栈，再定真对象委托面。**测量教训**：首验 rc=0 系 `| tail; echo $?` 管道假象（取到 tail 退出码）——终验命令禁管道取 RC（禁令已入本文件 Self-Review）。
 - [x] 文档回写 + 终审（design.md B7a/B8 落行；AGENTS.md 计数/命令更新；本计划勾选）
 
 ---
@@ -56,3 +56,4 @@
 - **顺序依据**：用户拍板"语义做尽→闭环→兜底"——Task 1-3 语义，Task 4 闭环+冒烟；真对象委托不在本批。
 - **验收线**：①demo 全 API 捕获不崩+会话完整+sim MATCH；②newgame 冒烟 rc=0。
 - **风险**：newgame 残余崩溃点（API 面外——元表/Canvas 方法）在 Task 4 抓到则逐个登记定归属（可能引出真对象委托批）。
+- **终审结论（2026-10-28，verifier 独立复核）**：验收线①PASS（99 项回归+api-parade 闭环+sim 全 MATCH+六检查点走查全过）；验收线②**FAIL**（4/4 SIGSEGV，事实登记见 Task 4 条目）——批总结论"语义做尽已兑现、透明目标未达"，风险条款命中，真对象委托按 B7+ 队列立项。**流程禁令**：终验取退出码禁止管道（`cmd | tail; echo $?` 得 tail 的 RC——本批假阳性根源）；管线命令先落文件再 `echo $?`。

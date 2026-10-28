@@ -443,7 +443,7 @@ _OUT_OPS = ("clear ", "draw ", "print ", "rect ", "line ", "circle ", "poly ", "
 
 
 def _out_rows(rows):
-    """帧块行 → out 行（clear/draw/print/rect，保序——d_crc 行集口径：
+    """帧块行 → out 行（_OUT_OPS 11 op 全集，保序——d_crc 行集口径：
     不含 dt/asset/ev/st/err/s_crc）。"""
     return [ln for ln in rows if ln.startswith(_OUT_OPS)]
 
