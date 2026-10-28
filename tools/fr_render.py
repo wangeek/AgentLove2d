@@ -22,6 +22,10 @@ import subprocess
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# subprocess 超时：FR_RENDER_TIMEOUT 可调（秒，缺省 60）——大流播放
+#（FR_PLAY，240 帧含每帧 Canvas 回读）实测超 60s，被工具层误杀（B11 实证）。
+TIMEOUT = int(os.environ.get("FR_RENDER_TIMEOUT", "60"))
 FORK_LOVE = os.path.join(_ROOT, "megasource", "build115", "love", "Release", "love.exe")
 DEMO = os.path.join(_ROOT, "megasource", "libs", "love", "demo")
 TIMEOUT = 60
