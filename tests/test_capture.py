@@ -784,3 +784,61 @@ def test_asset_proxy_methods_and_forms(tmp_path):
                          "--sim", out, "--api-parade"],
                         capture_output=True, timeout=120, cwd=_ROOT)
     assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
+
+
+# ---------------- B10：C 侧会话写出（任意游戏零改动出流） ----------------
+
+def _split_frames(path):
+    """会话文本 → (头行 tokens, {帧号: [行]})（帧块内除 dt 行外全保留）。"""
+    head = None
+    frames = {}
+    cur = None
+    for ln in open(path, encoding="utf-8"):
+        ln = ln.rstrip("\n")
+        if head is None:
+            head = ln.split()
+            continue
+        if ln.startswith("cmnt"):
+            continue
+        if ln.startswith("frame "):
+            cur = []
+            frames[int(ln.split()[1])] = cur
+        elif cur is not None and not ln.startswith("dt "):
+            cur.append(ln)
+    return head, frames
+
+
+def test_c_tee_parities_lua_tee(tmp_path):
+    """B10：FR_OUT C 侧 tee 与 --out Lua tee 并存对拍——同一进程双流，
+    除 dt 行（C tee 记 timer.step 真值、Lua tee 写 FIXED_DT）与 cmnt 外
+    逐行一致（asset/ev/err/st/out/s_crc/d_crc 全同）；头行域（sha/几何/
+    loglvl/seed）一致；fr-render 拓扑 B 离线回放 rc=0。"""
+    out_lua = str(tmp_path / "lua.fr")
+    out_c = str(tmp_path / "c.fr")
+    env = os.environ.copy()
+    env["FR_CAPTURE"] = "1"
+    env["FR_OUT"] = out_c
+    env["FR_SHA"] = _tbl_sha()
+    env["FR_SEED"] = "3056735"
+    r = subprocess.run([FORK_LOVE, DEMO, "--out", out_lua,
+                        "--sha", env["FR_SHA"], "--seed", "3056735"],
+                       capture_output=True, timeout=90, env=env, cwd=_ROOT)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+
+    head_lua, frames_lua = _split_frames(out_lua)
+    head_c, frames_c = _split_frames(out_c)
+    assert sorted(frames_lua) == sorted(frames_c) == [0, 1, 2, 3], \
+        (sorted(frames_lua), sorted(frames_c))
+    for k in sorted(frames_c):
+        assert frames_lua[k] == frames_c[k], \
+            ("帧 %d 行集不一致" % k,
+             [l for l in frames_lua[k] if l not in frames_c[k]][:3],
+             [l for l in frames_c[k] if l not in frames_lua[k]][:3])
+    # 头行：frb1/几何/sha/loglvl/seed 同域（cmnt 不同属预期）
+    assert head_lua[0] == head_c[0] == "frb1"
+    assert head_lua[1:3] == head_c[1:3] and head_lua[4:] == head_c[4:], (head_lua, head_c)
+
+    # C 侧流被离线回放器消费（拓扑 B）
+    rr = subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_render.py"),
+                         out_c], capture_output=True, timeout=120, cwd=_ROOT)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
