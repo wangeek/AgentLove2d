@@ -433,7 +433,7 @@ def _dcrc_of_blocks(blocks):
     return m
 
 
-_OUT_OPS = ("clear ", "draw ", "print ", "rect ")
+_OUT_OPS = ("clear ", "draw ", "print ", "rect ", "line ", "circle ", "poly ", "arc ", "points ")
 
 
 def _out_rows(rows):
@@ -661,3 +661,21 @@ def test_native_api_state_capture(tmp_path):
     # 原生 rect line mode + width 3 + 绿色（setColor 状态折参）
     assert ('rect 1 500.000000 200.000000 40.000000 20.000000 0.000000 0.000000'
             ' 3.000000 0 255 0 255') in text, "setLineWidth/setColor 状态未折参"
+
+
+# ---------------- B8 Task 2：绘制类五 op 挂钩 ----------------
+
+def test_native_draw_ops(tmp_path):
+    """B8 T2：line/circle/polygon/arc/points 原生调用捕获（cmd.tbl 封版签名）。"""
+    out = str(tmp_path / "ops.fr")
+    r = _run_demo(env_capture=True, extra=_tee_args(out))
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    text = open(out, "rb").read().decode("utf-8")
+    # line：两点线段
+    assert 'line 2 80.000000 60.000000 120.000000 90.000000 2.000000 0 255 255 255' in text
+    # circle：fill 圆
+    assert 'circle 0 600.000000 400.000000 15.000000 32 255 0 0 255' in text
+    # polygon：三角形 fill
+    assert 'poly 0 3 40.000000 100.000000 60.000000 140.000000 20.000000 140.000000 255 255 0 255' in text
+    # arc：pie 弧（arctype 0=pie）
+    assert 'arc 0 0 300.000000 200.000000 25.000000 0.000000 1.570796 16 0 255 255 255' in text
