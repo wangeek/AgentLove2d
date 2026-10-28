@@ -111,10 +111,16 @@ def test_capture_take_session_rows():
     assert ("rect 0 0.000000 456.000000 640.000000 24.000000 0.000000 0.000000 "
             "1.000000 255 0 0 255") in lines, (lines, r.stderr)
 
-    # 计数：3 帧 × 4 op（会话行缓冲全会话累积）
-    # B8 T1：原生 N8 print（setFont 状态）各帧也在——按文本区分计数。
-    for prefix, n in (("clear ", 3), ("draw 1 0 ", 3), ('print 2 "L0" ', 3),
-                      ('print 2 "N8" ', 3), ("rect 0 ", 3)):
+    # 计数：3 帧 × 基础 4 op + T2 五 op（test_native_draw_ops 锚）+ T3 rt/scissor
+    # 段（会话行缓冲全会话累积）。B8 T3：canvas 代理段各帧一组——rt 3 →
+    # clear 0 0 255 255（蓝，画进 canvas）→ rt 0 → scissor 矩形 → 品红 rect →
+    # scissor off（-1 哨兵）→ clear/rect 计数翻倍。
+    for prefix, n in (("clear ", 6), ("draw 1 0 ", 3), ('print 2 "L0" ', 3),
+                      ('print 2 "N8" ', 3), ("rect 0 ", 6),
+                      ("rt 3", 3), ("rt 0", 3), ("clear 0 0 255 255", 3),
+                      ("scissor 100.000000 200.000000 300.000000 150.000000", 3),
+                      ("scissor -1.000000 -1.000000 -1.000000 -1.000000", 3),
+                      ("rect 0 50.000000 150.000000 200.000000 200.000000", 3)):
         assert sum(1 for ln in lines if ln.startswith(prefix)) == n, (prefix, lines)
 
 
@@ -433,7 +439,7 @@ def _dcrc_of_blocks(blocks):
     return m
 
 
-_OUT_OPS = ("clear ", "draw ", "print ", "rect ", "line ", "circle ", "poly ", "arc ", "points ")
+_OUT_OPS = ("clear ", "draw ", "print ", "rect ", "line ", "circle ", "poly ", "arc ", "points ", "rt ", "scissor ")
 
 
 def _out_rows(rows):
@@ -679,3 +685,23 @@ def test_native_draw_ops(tmp_path):
     assert 'poly 0 3 40.000000 100.000000 60.000000 140.000000 20.000000 140.000000 255 255 0 255' in text
     # arc：pie 弧（arctype 0=pie）
     assert 'arc 0 0 300.000000 200.000000 25.000000 0.000000 1.570796 16 0 255 255 255' in text
+
+
+# ---------------- B8 Task 3：rt/scissor 状态行 + Shader 边界 ----------------
+
+def test_rt_scissor_shader(tmp_path):
+    """B8 T3：setCanvas→rt 行、setScissor→scissor 行（off 哨兵）、
+    setShader→err 行登记（语义边界）。"""
+    out = str(tmp_path / "rts.fr")
+    r = _run_demo(env_capture=True, extra=_tee_args(out))
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    text = open(out, "rb").read().decode("utf-8")
+    # rt 行：帧内 setCanvas(c) → rt 3；帧尾 setCanvas() → rt 0
+    assert "rt 3" in text, "setCanvas(canvas 代理) 未产 rt 行"
+    assert "rt 0" in text, "setCanvas() 复位未产 rt 行"
+    # scissor 行：setScissor(100,200,300,150) → 正常矩形
+    assert "scissor 100.000000 200.000000 300.000000 150.000000" in text, \
+        "setScissor 未产 scissor 行"
+    # scissor off：setScissor() → 哨兵（-1 -1 -1 -1 或特殊标记）
+    assert "scissor -1.000000 -1.000000 -1.000000 -1.000000" in text, \
+        "setScissor() off 未产哨兵行"
