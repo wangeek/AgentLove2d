@@ -112,7 +112,9 @@ def test_capture_take_session_rows():
             "1.000000 255 0 0 255") in lines, (lines, r.stderr)
 
     # 计数：3 帧 × 4 op（会话行缓冲全会话累积）
-    for prefix, n in (("clear ", 3), ("draw 1 0 ", 3), ("print 2 ", 3), ("rect 0 ", 3)):
+    # B8 T1：原生 N8 print（setFont 状态）各帧也在——按文本区分计数。
+    for prefix, n in (("clear ", 3), ("draw 1 0 ", 3), ('print 2 "L0" ', 3),
+                      ('print 2 "N8" ', 3), ("rect 0 ", 3)):
         assert sum(1 for ln in lines if ln.startswith(prefix)) == n, (prefix, lines)
 
 
@@ -642,3 +644,20 @@ def test_event_capture(tmp_path):
     assert r2.returncode == 0, (r2.returncode, r2.stderr)
     with open(out, "rb") as fa, open(out2, "rb") as fb:
         assert fa.read() == fb.read(), "注入会话两次运行不逐字节一致"
+
+
+# ---------------- B8 Task 1：状态类捕获（原生 API 形态） ----------------
+
+def test_native_api_state_capture(tmp_path):
+    """B8 T1：原生 love.graphics.* 直调（不经 ir_graphics 适配层）。
+    setColor/setLineWidth 状态折参数（真状态机已有）；setFont 状态跟踪
+    + print 不传 font（本批补）。"""
+    out = str(tmp_path / "native.fr")
+    r = _run_demo(env_capture=True, extra=_tee_args(out))
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    text = open(out, "rb").read().decode("utf-8")
+    # 原生 print（不传 font）→ font id 来自 setFont 状态（=2）
+    assert 'print 2 "N8" 500.000000 10.000000' in text, "setFont 状态未跟踪"
+    # 原生 rect line mode + width 3 + 绿色（setColor 状态折参）
+    assert ('rect 1 500.000000 200.000000 40.000000 20.000000 0.000000 0.000000'
+            ' 3.000000 0 255 0 255') in text, "setLineWidth/setColor 状态未折参"

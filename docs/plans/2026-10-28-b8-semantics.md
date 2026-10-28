@@ -17,6 +17,7 @@
 - **状态行 op**（cmd.tbl 无对应 op 的）：setCanvas→`rt` op（已有！目标切换状态行）；setScissor→`scissor` op（已有）；**origin/push/pop/translate/scale**——变换栈结算已在 w_draw 挂钩（getTransform 复合），push/pop/origin 影响的是 Graphics 内部变换栈，**捕获侧不需要记**（结算发生在 draw/print/rect 挂钩时刻——天然正确）；setShader/newShader→**err 行登记 + 真执行不抑制**（Shader 无 IR 表达，v1 语义边界如实记）
 - **setBackgroundColor**：真执行（不影响 out 行——clear 已显式记色）
 - **查询类**：getWidth/getHeight/getFPS——无副作用，零挂钩（透传天然正确）
+- **环境层家族**（2026-10-28 拍板）：`mouse.setCursor`、`window.setTitle/setMode/setFullscreen`、`mouse.setVisible/setGrabbed`——修改 OS 窗口属性不产生帧内容（光标在合成层，d_crc/out 均不含）。**v1 透明放行**（不挂钩不抑制不记录），家族清单入账 cmd.tbl 备注；判据需求出现时升格（独立环境行或 err）
 - **崩溃防线**：语义替代返回的代理在**任何**被当作真对象用的路径上不得崩——本批先靠"语义做全"消灭崩溃面；残余崩溃点在闭环测试里抓到再逐个定（真对象委托是后续批的兜底，不是本批手段）
 
 ---
