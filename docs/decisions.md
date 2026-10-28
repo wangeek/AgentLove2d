@@ -111,3 +111,23 @@ LÖVE 是 display list 的第一个消费者 / 实验床；无头内核独立（
 ## D8 修订（2026-10-28，B6 终审补记）：镜像范围=注册状态根子图
 
 第 1 条「沿 gc.root 全对象链」修正为「**注册状态根（demo 例 kernel.state）可达子图**」：全堆 CRC 含 runtime 簿记（args 表/解析簿记），录制与 sim 进程形态天然不同，跨进程等值结构性不可达（B6 Task 1 实证）。子图口径由 D8 原文「内核 VM 是被观测者，唯一进堆镜像范围」直接支持。未注册根时回退全堆（诊断口径）。引用处：design B6 行、cmd.tbl s_crc 注记。
+
+## D12 捕获面全 API 语义三分类与回放侧三机制（2026-10-28，B8 批定稿）
+
+以真实第三方游戏（newgame《剑侠无敌》）实测 20 API 调用清单为验收靶，捕获面语义覆盖从 demo 四件套扩到全 API 面。五条定稿：
+
+1. **语义三分类**：
+   - **状态折参**：setColor/setLineWidth → 绘制行 color/width 参数；setFont → print 行 font 参数来源（print 不传 font 时取状态）。真状态机实读（`Graphics::getColor/getLineWidth`），非镜像缓存。
+   - **状态行**：setCanvas→`rt`、setScissor→`scissor`（off=-1 哨兵）——cmd.tbl 既有 op。
+   - **边界登记**：setShader/newShader → err 行（log 段语义）+ 真执行不抑制——Shader 着色无 IR 表达，忠实性事实如实记（newShader 真对象构造无钩，边界在使用点）。
+   - **零记录类**：查询（getWidth/getHeight/getFPS 透传真值）与变换栈（origin/push/pop/translate/scale——挂钩时刻经 getTransform 结算进世界坐标；D11-4「变换栈就地结算」的全挂钩实证）。
+2. **捕获态零真执行纪律**：w_* 捕获分支只记行、不碰真 GL 状态——真执行统一归 present 时刻回放。实证（B8 T3）：setCanvas() 捕获分支曾保留真执行，把验证帧 Canvas 上的回放整体劫持到屏幕（三点像素探针全黑）；scissor 同理同纪律。
+3. **rt 0 = 回放会话基线**：流语义不变（rt 0=切默认目标），exec 侧「默认目标」= 回放会话起点（present 钩=真屏幕 / tee₂ 验证帧=验证 Canvas / 拓扑 B=离线 Canvas）——两回放驱动（capture_replay / 离线循环）进出配对设置/还原基线。盲切 `setCanvas()` 会把帧内容画到会话基线之外。
+4. **观察侧围栏**（`_frCaptureSuspend`/`_frCaptureResume`，计数式嵌套）：多 VM 原则（观察机器不进被观测流）在捕获层的落实——rig 验证帧的真 Canvas 切换零记录、走纯真执行。
+5. **捕获期 err 行独立缓冲**（`fr_take_err_rows`/`_frTakeErrRows`）：err 属 log 段（cmd.tbl 封版：豁免 off 级），不混 out 捕获流——d_crc 口径恒为纯 out op；tee 组装 log 段行序 = 捕获期 err（draw 序，任何档）→ present 期 statediff 行（full 档）；sim 比对集同构对齐。
+
+闭环验收形态：demo `--api-parade` 独立通道（kernel 直调 20 API 靶；主 demo 逐行基线不漂）；sim 重演须同通道（fr-render `--sim --api-parade` 透传）——录制/重演内核路径一致原则。
+
+## D13 环境层家族 v1 透明放行（2026-10-28 拍板）
+
+`mouse.setCursor/setVisible/setGrabbed`、`window.setTitle/setMode/setFullscreen`——修改 OS 窗口属性/合成层（光标在合成层），不产生帧内容（out/d_crc 均不含），**v1 不挂钩不抑制不记录**（透明放行 = 开捕获与不开行为完全一致）。家族清单入账 cmd.tbl 头部备注；判据需求出现时升格（独立环境行或 err 行），届时按「改表→重生成」规矩走。

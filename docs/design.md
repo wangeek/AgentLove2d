@@ -9,7 +9,7 @@
 | 通读架构、入门 | 本文 | 总纲（叙事） |
 | 查/改流格式（段、行型、级别、语法） | `docs/fr-spec.md` | 格式真源（v1.2 封版） |
 | 查/改命令签名与来源行号 | `tables/cmd.tbl` | 命令单一真源（生成源） |
-| 追架构依据、修决策 | `docs/decisions.md` | 决策台账 D1–D10（追加式） |
+| 追架构依据、修决策 | `docs/decisions.md` | 决策台账 D1–D13（追加式） |
 | 查魔改实现细节（挂点/源码行号/开放清单） | `docs/love2d-gap.md` | 魔改设计与取证 |
 | 查渲染端设计与流载体 | `docs/love2d-renderer.md` | 消费端设计 |
 
@@ -71,14 +71,15 @@
 - RNG 单咽喉：boot 层 `math.random`→`love.math`，rngc 白送。
 - 输入禁直读：`mouse.getPosition` / `isScancodeDown` 等改为读 in 段派生快照——输入只有一条进账的路。
 - 错误帧：err 行 + 照常闭合 + s_crc 照算；回放必须复现同错。
+- 捕获态零真执行：w_* 捕获分支只记行不碰真 GL 状态（真执行统一归 present 回放）；捕获期 err 行走独立缓冲（log 段语义）——d_crc 口径恒纯 out op（D12-2/5）。
 - 回放注入默认严格档：只注入 OS 源事件，合成器重算、流内记录的合成事件当对拍预言。
 
 ## 4. 机制卡（职责 / 接口 / 依赖 / 真源指针）
 
 | 卡 | 职责与要点 | 真源 |
 |---|---|---|
-| 捕获层 | w_* 边界栈拷贝→按 cmd.tbl 的 section 列路由 in/log/out；fr-gen 生成胶水，零手写；对象参数只记资产号 | D8-1、gap §一 |
-| 资产语义替代 | 13 项 GL 依赖创建 API **原名原签名**、实现换成 CPU 注册（校验实参→登记 asset 行→返回资产代理）；newQuad 纯数据绕开；原料层=love.image / love.font；无 IR 对应者暂记 err 行，按频度增补 | D8-5、gap §七.3 附件 |
+| 捕获层 | w_* 边界栈拷贝→按 cmd.tbl 的 section 列路由 in/log/out；fr-gen 生成胶水，零手写；对象参数只记资产号；**B8 全 API 三分类**（状态折参/状态行/边界登记/零记录，D12）+ 捕获态零真执行 + 观察侧围栏（`_frCaptureSuspend/Resume`） | D8-1、D12、gap §二 |
+| 资产语义替代 | 13 项 GL 依赖创建 API **原名原签名**、实现换成 CPU 注册（校验实参→登记 asset 行→返回资产代理）；newQuad 纯数据绕开；原料层=love.image / love.font；无 IR 对应者暂记 err 行，按频度增补。**B8 实况**：newImage/newCanvas/newQuad ✅、newFont 仅 size 形态（路径形态挂钩报错可 pcall 吞）；其余 A 类=边界（接管状态明细见 gap §七.3 附件）——第三方游戏触达即残余崩溃面（newgame SIGSEGV，真对象委托兜底批立项） | D8-5、gap §七.3 附件 |
 | 事件层 | pump / w_push 捕获；排干快照再分发（poll 中途 push 的落帧问题被构造性消灭）；slot / CALL 深度 / timer 归一（update 结算产生）；注入两档 | spec §8、gap §三 |
 | 自有 run loop | 替换 callbacks.lua:135 的 love.run；帧=事务、present=commit；内核协程由 update 驱动，分发不跨帧 yield | gap §三 |
 | log A 方案（主力） | LuaJIT gc.root 全对象链 + 影子副本 TValue memcmp→脏槽位出 st 物理行，同次遍历产 s_crc；rehash 检出→表重建事件（整表重发，checkpoint 同语义）；full 级专用，off/base 不碰堆 | D9-4、gap §四 |

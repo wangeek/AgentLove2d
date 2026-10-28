@@ -18,6 +18,15 @@
 # v1.2 退役条目（sango/GDI 遗产，勿复用其名）:
 #   spr/txt/fill/blt/lut → 由 draw/print/rect/.../rt 对照现代 API 取代
 #   loop（模态循环行，Win32 DialogBox 遗产）→ 模态是内核逻辑，不是帧状态
+#
+# 环境层家族（D13，2026-10-28 拍板）——v1 透明放行（不挂钩不抑制不记录，开捕获与不开行为一致）：
+#   mouse.setCursor / mouse.setVisible / mouse.setGrabbed
+#   window.setTitle / window.setMode / window.setFullscreen
+# 语义：修改 OS 窗口属性/合成层（光标在合成层），不产生帧内容（out/d_crc 均不含）；
+# 判据需求出现时升格（独立环境行或 err 行），届时按"改表→重生成"规矩走。
+# A 类 GL 依赖创建 API 的接管状态（B8 后）见 docs/love2d-gap.md §七.3 附件：
+# newImage/newCanvas/newQuad 已语义替代；newFont 仅 size 形态（path 形态挂钩报错
+# Lua error、FileData/Rasterizer=边界）；其余 A 类=边界（第三方游戏真对象路径崩溃面）。
 #   rng（帧头种子行）→ 初始种子进 session header，帧内变动由 rngc 记录
 #
 op	section	signature	source	status	notes

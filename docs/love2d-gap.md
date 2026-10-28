@@ -3,6 +3,8 @@
 > 前提修正（2026-10-26 用户纠偏）：**本项目先建 FR 工具链，载体是魔改 LÖVE**——内核是跑在 LÖVE Lua VM 上的脚本（借鉴它用 Lua），捕获/消费/记录都长在引擎里；sango 是将来的 lowering 前端之一，与本项目解耦。v1（外部消费者前提）的 G2/G3/G4 结论作废，本文重写；v1 的 G0（版本对齐）与 GUI 子系统事实仍成立，移入附录。
 >
 > 取证基线：`love2d/love-src` 官方 11.5 tag（`6eb8d54`）。
+>
+> **B8 补记（2026-10-28）**：捕获面全 API 覆盖已落地（语义三分类+回放侧三机制，见 §二补记与 D12）；§七.3 附件 A 类表已加接管状态列——语义替代的实际边界即第三方游戏（newgame）残余崩溃面。
 
 ## 一、FR 结合 LÖVE 现有条件的六个挂点
 
@@ -31,6 +33,17 @@
    - **L1 引擎魔改**（真身）：生成的捕获层接入 w_* 边界 + C 回放器 + 自有 run loop + null Graphics 后端。
    - v1 遗留的"codec DLL+FFI 绑定"待拍板项**消解**：无需独立 DLL，codec 编进引擎；fr-gen 两目标 = C（引擎内）+ Python（工具族）。
 6. **为什么要留 Lua 消费者**：同一份流被一个不含引擎内部知识的 Lua 程序消费成功 = 契约自证（LLVM 多后端互证的道理）。慢，但它是工具族的一员，不是生产路径。
+
+**B8 全 API 覆盖补记（2026-10-28，D12）**：捕获面从 demo 四件套扩到全 API 面（验收靶 = newgame 实测 20 API 调用清单），语义三分类定稿：
+
+| 类 | API（B8 实收） | 语义 |
+|---|---|---|
+| 状态折参 | setColor / setLineWidth / setFont | 折进后续绘制行参数（真状态机实读，非镜像缓存） |
+| 状态行 | setCanvas→`rt`、setScissor→`scissor`（-1 哨兵） | cmd.tbl 既有 op；**捕获态零真执行** |
+| 边界登记 | setShader / newShader | err 行（log 段独立缓冲）+ 真执行不抑制——着色无 IR 表达 |
+| 零记录 | getWidth/getHeight/getFPS（透传）；origin/push/pop/translate/scale | 变换栈在挂钩时刻经 getTransform 结算进世界坐标 |
+
+配套机制：**回放会话基线**（exec 侧 rt 0 = 会话起点目标——present 真屏幕 / tee₂ 验证 Canvas / 拓扑 B 离线 Canvas；两回放驱动配对设置/还原）；**观察侧围栏** `_frCaptureSuspend/_frCaptureResume`（rig 机器行不进内核流——多 VM 原则在捕获层的落实）；**err 独立缓冲** `_frTakeErrRows`（d_crc 口径恒纯 out op）；**api-parade 闭环通道**（demo `--api-parade` 20 API 直调 + sim 同通道重演，`fr-render --sim --api-parade`）。教训实录：draw 期真 setCanvas 会劫持验证帧回放目标（三点像素探针全黑）——**捕获态零真执行是纪律，不是优化**。
 
 ## 三、事件层：三源统一入队、单线程全序、present 为唯一同步点
 
@@ -160,16 +173,18 @@ slembcke 侧（纯 Lua 层的坑与技巧，fr-trace/L0 直接受用）：
 
 ### §七.3 附件：GL 依赖面清单（2026-10-26 源码取证，wrap_Graphics.cpp `luax_checkgraphicscreated` 守卫全集）
 
-**A. GPU 资产创建——内核禁直调，由 fr 注册接管**（13 项，行号=守卫调用处）：
+**A. GPU 资产创建——内核禁直调，由 fr 注册接管**（13 项，行号=守卫调用处；**B8 接管状态**列=2026-10-28 实况）：
 
-| 类 | API | 行号 |
-|---|---|---|
-| 纹理 | newImage / newCubeImage / newArrayImage / newVolumeImage | :1005 / :774 / :868 / :932 |
-| 目标 | newCanvas | :1189 |
-| 字体 | newFont / newImageFont / newText | :1088 / :1116 / :1644 |
-| 批次/几何 | newMesh / newSpriteBatch / newParticleSystem | :1622 / :1146 / :1170 |
-| 视频 | newVideo | :1666 |
-| 着色器 | newShader（经 getShaderSource 守卫） | :1264 |
+| 类 | API | 行号 | B8 接管状态 |
+|---|---|---|---|
+| 纹理 | newImage / newCubeImage / newArrayImage / newVolumeImage | :1005 / :774 / :868 / :932 | newImage ✅（ImageData/文件路径双形态）；数组/立方/体积三形态=**边界** |
+| 目标 | newCanvas | :1189 | ✅（w,h 形态；真对象需求走 `_frNewCanvasReal`） |
+| 字体 | newFont / newImageFont / newText | :1088 / :1116 / :1644 | newFont(size) ✅；newFont(路径) ⚠️ 挂钩报 Lua error（游戏侧 pcall 可吞、退化 size 形态）；FileData/Rasterizer 形态=**边界**；newImageFont/newText=**边界** |
+| 批次/几何 | newMesh / newSpriteBatch / newParticleSystem | :1622 / :1146 / :1170 | newQuad ✅（纯数据，见 B）；三批次类=**边界** |
+| 视频 | newVideo | :1666 | **边界** |
+| 着色器 | newShader（经 getShaderSource 守卫） | :1264 | 真对象构造无钩（边界在使用点 setShader→err 行） |
+
+「边界」= 捕获态下未接管的创建 API 走原实现/报错——**第三方游戏触达这些路径即残余崩溃/失配面**（newgame 实证：FR_CAPTURE=1 下 world_intro 首帧 SIGSEGV，B7+ 队列立项真对象委托兜底）。
 
 **B. 纯数据但被同一守卫拦住的例外**：`newQuad`（:1041）——Quad 是纯几何（:1078 只做 `newQuad(v, sw, sh)`，无 GPU 资源），只因走 Graphics 实例被拦。处置：**quad 作为 asset 行数据注册（x,y,w,h+总宽总高），内核根本不需要调 newQuad**，渲染端物化时自己造——正好落在我们已有的资产模型里。
 
