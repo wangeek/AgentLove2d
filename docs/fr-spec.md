@@ -131,7 +131,7 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 
 - 二进制 `.frb`（小端）：header 50B = magic `"FRB1"`(4B) + version u8=1 + width u16 + height u16 + sha 32B（cmd.tbl 规范表 sha256 原始摘要）+ loglvl u8（0=off 1=base 2=full）+ seed u64；其后 entries 重复至 EOF：tag u8——`0x01` frame（u32 body_len + body，body 为 rows 逐条、各以 opcode 起始，0xFF 禁入帧内）、`0xFF` cmnt（str，禁 \r \n）；其它 tag 非法。**帧号由顺序隐含**（从 0 连续计数，文本侧显式校验）。
 - 文本 `.fr`（canonical）：首行 `frb1 <w> <h> <sha64hex小写> <off|base|full> <seed十进制>`；`cmnt <原文>`（"cmnt " 之后逐字保留；可在任意两帧之间）；`frame <n>`（n 连续，行即帧界——cmnt 行亦闭合帧块）；row 行位于 frame 块内。
-- asset 行文本规范形：kind 用名字（`asset image <id> <w> <h> <hex>` / `asset canvas <id> <w> <h>` / `asset quad <id> <6×%.6f>` / `asset font <id> <size%.6f> <hex>`；hex 小写连续、空载荷 `-`）；二进制侧 kind 用编号常量（§6.1）。
+- asset 行文本规范形：kind 用名字（`asset image <id> <w> <h> <hex>` / `asset canvas <id> <w> <h>` / `asset quad <id> <6×%.6f>` / `asset font <id> <size%.6f> <hex>`；hex 小写连续、空载荷 `-`）；二进制侧 kind 用编号常量（§6.1）。image 的 hex **双口径**（v1.2.6）：编码文件字节（PNG/BMP/JPEG 魔数——路径/FileData 形态登记原样字节，物化端解码）或 RGBA8 原始像素（ImageData 形态，长度=w*h*4）；物化端按魔数判别先解码后直构（fr_materialize.cpp）。font 的 hex 恒为 TrueType 数据字节。
 - 错误口径：文本侧 SessionError 含行号；二进制侧含偏移；行级错误包装透传（含肇事值）；dump 侧对非法 Session 结构以 SessionError 拒绝（共享校验，双出口一致）。
 - 实现分层：行级编解码为表生成（§6.1/§9）；**会话层是结构性行（CMNT/帧定界不随 cmd.tbl 变化），手写库 `tools/fr_session.py`**，不参与重生成——这是"生成代码不手改"纪律的明确边界。
 - decode 无 cursor 变体的务实解（帧内行长用重编码长度推进）与升级路径见 `tools/fr_session.py` docstring。
@@ -189,3 +189,4 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 - **v1.2.3**（2026-10-27，B3b）：L0 语义样机口径登记——st 行 obj=0+点路径（语义形态，B6 A 方案替换为物理 obj id）、s_crc/d_crc=B3b 期为状态序列化 CRC32（样机，B6 换堆遍历）；L0 只产 .fr 文本（.frb 经 fr-as 转换）。
 - **v1.2.4**（2026-10-28，B6 实现形态登记，不改封版语义）：s_crc 物理形态=注册状态根子图 CRC（D8 修订：镜像范围为内核状态非 runtime 簿记；GC64 canonicalization+hash multiset 免疫字符串哈希随机种子）；st 物理行落地（数组 slot `[i]`=键原值 0 基、hash slot `"key"`、nil 槽不产行）；表重建经 err 载体 `err "st-rehash <id> <asize> <hmask>"`（err 行"表重建计数"语义位）；FR_LOGLEVEL=full 按需触发。**欠账登记**：end 段 d_crc 行未随 B6 兑现（无头哨兵口径待定）——B7 首批清偿；s_crc 对 str 内容仍 tag 位（diff 档已补内容 CRC，s_crc 统一归 B7+）。
 - **v1.2.5**（2026-10-28，B7a 清偿 v1.2.4 两笔欠账，不改封版语义）：d_crc 进流兑现（end 段双行完整——录制侧当帧 out 行 CRC32，C 算法单一真源，无头可用；与回放侧像素 D_CRC 互补不混同）；canonicalization 单一化（s_crc str 敏感——tag|(len+内容)CRC32 共享函数，diff 档旁路归一，banner-only 等长同 tag 差异已可检出）。
+- **v1.2.6**（2026-10-28，B12 实现形态登记，asset data 语义修订）：image 资产 hex 双口径（编码文件字节——路径/FileData 形态原样登记，魔数 PNG/BMP/JPEG 判别、物化端解码；或 RGBA8 原始像素——ImageData 形态，长度 w*h*4）——路径资产 5-10× 瘦身（此前 B11 一度统一 RGBA8 像素域，体积实测膨胀反噬）；工具面：FR_SHA 缺省全 0 兜底（手动冒烟免填，判据对账仍需真指纹）；FR_BOOT_SCRIPT 外置状态根注入（零游戏源码改动；首帧 present/s_crc 采集前惰性执行；脚本失败降级全堆）。已知边界：全域模块根（如 newgame 57 个 src.* 表）仍含簿记噪声（Log 时间戳/Launch 帧计数）——s_crc 跨进程可比需精选数据根，剔除簿记类模块，待按游戏定制。
