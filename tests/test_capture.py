@@ -751,3 +751,36 @@ def test_api_parade_closed_loop(tmp_path):
     sim_out = rr.stdout.decode("utf-8")
     assert "SIM SUMMARY 4 4 0 0" in sim_out, sim_out
     assert "s=ok d=ok" in sim_out and "s=mis" not in sim_out and "d=mis" not in sim_out, sim_out
+
+
+# ---------------- B9：代理方法族 + 资产去重 + 形态扩面 ----------------
+
+def test_asset_proxy_methods_and_forms(tmp_path):
+    """B9：对象方法兼容层（真实游戏 30+ 调用面）——几何族直读（getDimensions/
+    getWidth）、filter 族代理态、font 度量族（物化真 Font 排版）、getType；
+    newFont(FileData) 形态登记；不可变资产去重（同 ImageData 复用 id）；
+    setBlendMode err 边界（battle 形态 add→alpha ×2/帧）。"""
+    out = str(tmp_path / "proxy.fr")
+    r = _run_demo(env_capture=True, extra=_tee_args(out) + ["--api-parade"])
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    text = open(out, "rb").read().decode("utf-8")
+    # 几何族 + getType（image 32x32 / canvas 256）
+    assert 'print 2 "IW=32 IH=32 Image"' in text, "image 几何族/getType 失效"
+    assert 'print 2 "CW=256"' in text, "canvas getWidth 失效"
+    # filter 代理态（setFilter nearest → getFilter 回读）
+    assert "TW=" in text and " nearest" in text, "filter 族/排版宽度失效"
+    # 去重自证：同 ImageData 两次 newImage → 同 id（不可变资产引用语义）
+    assert 'print 2 "DUP=true"' in text, "不可变资产去重失效"
+    # newFont(FileData) 形态：伪字节登记（asset font 4 12.000000 + 32B hex）
+    fd_ln = next(ln for ln in text.splitlines() if ln.startswith("asset font 4 "))
+    t = fd_ln.split()
+    assert t[:4] == ["asset", "font", "4", "12.000000"], fd_ln
+    assert t[4] == "00010203" * 8, fd_ln
+    # blend 边界 err ×2/帧 ×4 帧（与 shader err 不同前缀，各自计数）
+    assert text.count('err "st-unsupported blendmode no-ir') == 8, "blend err 计数漂移"
+    assert text.count('err "st-unsupported shader no-ir') == 8, "shader err 计数漂移"
+    # 闭环：同通道 sim 重演全 MATCH（新段确定性——物化度量两侧同源）
+    rr = subprocess.run([sys.executable, os.path.join(_ROOT, "tools", "fr_render.py"),
+                         "--sim", out, "--api-parade"],
+                        capture_output=True, timeout=120, cwd=_ROOT)
+    assert rr.returncode == 0, (rr.returncode, rr.stdout, rr.stderr)
