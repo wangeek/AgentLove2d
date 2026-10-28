@@ -27,6 +27,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - **fork 构建（B4 起）**：megasource 在 `megasource/`（11.5 tag，不入库）；增量构建 `cmake --build megasource\build115 --config Release`；环境变量 `CMAKE_POLICY_VERSION_MINIMUM=3.5` 必设（openal 内部 cmake 用）；自建运行时在 `megasource\build115\love\Release\`
 - fork 捕获 rig（B4-2）：`megasource\build115\love\Release\love.exe megasource\libs\love\demo`（`FR_CAPTURE=1` 时捕获/回放，缺省 3 帧验证 rig 打 PIXEL/会话行）；tee₁ 会话加 `--out <path> --sha <表指纹> [--seed S] [--frames N 缺省 4]`；全 API 闭环加 `--api-parade`（B8 T4：20 API 靶直调通道，sim 重演须同通道 `python tools/fr_render.py --sim <in.fr> --api-parade`）；回归 tests/test_capture.py
 - 任意游戏 C 侧 tee（B10）：`FR_CAPTURE=1 FR_OUT=<path> FR_SHA=<表指纹> [FR_SEED n] [FR_FRAMES n] [FR_DT f]` → **零游戏侧改动出流**（in=Event::pump convert 捕获、dt=w_timer_step 钩、帧边界=present 钩逐帧追加、lua_close 前封口）；离线回放 `python tools/fr_render.py <流>`。newgame 实证：30 帧 smoke rc=0 → 38MB 流（18 资产/83591 out 行）→ 离线回放 rc=0、帧 5-30 D_CRC 稳定。与 demo `--out`（Lua tee）并存正交；`_frSessionFrame` 显式补帧口=验证帧等价点
+- 离线回放视觉播放（B11）：`FR_PLAY=1 python tools/fr_render.py <流>`——离线画布贴屏+present+按流内 dt 节奏（播完停留 1s）；判据输出与关闭时逐帧一致（播放只追加上屏，拓扑 B 默认无头形态不变）
 - Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
