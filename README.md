@@ -1,36 +1,59 @@
-# AgentLove2d
+# FR 帧流 IR（AgentLove2d）
 
-**FR 帧流中间表示 + LÖVE 参考渲染器**——无头内核与渲染端之间的双端契约实验床。
+把"游戏跑了一趟"变成一个**可传递、可复查、可计算**的物——不是像素录像，是带状态、带输入、带校验和的**确定性执行历史**。载体：魔改 LÖVE 11.5（fork），Lua 游戏内核产出 FR 流，引擎内 C 层捕获与回放。
 
-一句话：把"内核怎么想、画面怎么画"编成一种**语义唯一、双形态编码、可 diff 可判据**的帧流（文本 `.fr` / 二进制 `.frb`）；载体是魔改 LÖVE 11.5——Lua 内核脚本产出 FR 流，引擎内 C 层捕获与回放。sango 为后续 lowering 前端。
+## 这是什么（一分钟）
 
-## 背景
+```
+游戏（任意 LÖVE 游戏，零改动）
+   │  FR_CAPTURE=1 FR_OUT=game.fr
+   ▼
+FR 流（.fr 文本 / .frb 二进制，帧五段：head/in/log/out/end）
+   │  python tools/fr_render.py game.fr        ← 脱离原程序回放（判据）
+   │  FR_PLAY=1 python tools/fr_render.py ...  ← 视觉播放（可看可关）
+   ▼
+画面 + 逐帧 D_CRC/像素锚（符号判据，不是人眼）
+```
 
-2026-10-26 定稿并同日升 v1.2：从早期移植架构讨论演进而来，现已与任何具体游戏解耦——本仓库只做工具链与宿主机制，**面向现代编程环境（LÖVE 11.5）**。
+同一份流：LLM 直接读文本验证逻辑、diff 出回归点、离线重渲任意视觉风格。**X11 送画面的命令，视频送画面的像素，FR 送世界的执行历史。**
 
-## 目录
+## MVP 已实证（v0.1.0，2026-10-29）
 
-| 路径 | 内容 |
+- **第三方游戏闭环**：newgame《剑侠无敌》零改动录制（240 帧 rc=0）→ 脱离原程序回放/播放 rc=0，画面与原版逐像素一致（--auto-shot 对拍）
+- **格式封版**：v1.2.7（.fr/.frb round-trip 逐字节相等；font 字节池化引用形态）
+- **性能基准**（newgame 30 帧）：录制 0.09 s/帧（状态根注入）；流 23.5MB 文本 / 11.2MB 二进制；串流档位 15fps≈12Mbps（详见 docs/benchmarks.md）
+- **健壮性**：OTF/TTC/垃圾字节字体三态捕获全通；NaN/Inf 参数防线；101 项回归全绿
+
+## 快速开始
+
+```bash
+# 录制（SHA 可缺省；表指纹对账时才必需）
+FR_CAPTURE=1 FR_OUT=/tmp/game.fr FR_SEED=1 \
+  megasource/build115/love/Release/love.exe <任意 LÖVE 游戏目录>
+
+# 回放（判据：D_CRC 序列）/ 播放（视觉，窗口可关）
+python tools/fr_render.py /tmp/game.fr
+FR_PLAY=1 python tools/fr_render.py /tmp/game.fr
+
+# 转二进制 / 反汇编 / 结构统计
+python tools/fr_as.py /tmp/game.fr -o /tmp/game.frb
+python tools/fr_dis.py /tmp/game.frb | head
+python tools/fr_dump.py /tmp/game.frb --stats
+```
+
+## 文档地图
+
+| 想了解 | 去哪 |
 |---|---|
-| `docs/design.md` | **总纲入口**：架构叙事、一帧的一生、机制卡、实施路线 |
-| `docs/fr-spec.md` | **规格真源**（v1.2 封版）：对象模型、五段语义、级别、命令集、事件词汇、工具族、待取证清单 |
-| `docs/decisions.md` | 架构决策台账 D1–D7：总则、四准则、验证两律、树不进协议、语境纪律、LÖVE 定位 |
-| `docs/love2d-renderer.md` | LÖVE 消费端设计：定位、接口映射、事件语境、拓扑、劣势对策 |
-| `docs/love2d-gap.md` | 魔改设计与差距分析 v2：挂点、绘制层、事件层、log 边界记录 |
-| `tables/cmd.tbl` | 命令表 = 单一真源（v1.2 对照 LÖVE 11.5 源码定稿），fr-gen 的生成源 |
-| `tools/`（规划） | fr-* 工具族（Python + 生成的 C 编解码），第一批 fr-gen |
-| `render/`（规划） | LÖVE 渲染端（Lua），消费 FR 流 |
-| `tests/`（规划） | round-trip 回归与对拍判据 |
-| `love2d/` | 素材：LÖVE 11.5 win64 运行时（不入 git）、官方 11.5 源码、离线 wiki dump |
+| 项目动机与 Agent 工作流 | docs/fr-rationale.md |
+| 系统全貌 / 一帧的一生 / 实施路线 | docs/design.md（总纲入口） |
+| 流格式规格（v1.2.7 封版） | docs/fr-spec.md + tables/cmd.tbl（命令单一真源） |
+| 架构决策 D1–D13 | docs/decisions.md |
+| 性能基准线与优化路径 | docs/benchmarks.md |
+| 魔改设计与取证 | docs/love2d-gap.md |
 
-## 当前状态与第一批任务
+## 测试
 
-规格 v1.1 已封版（2026-10-26），实现顺序：
-
-1. `cmd.tbl` 收录定稿（op / 段 / 签名终表）
-2. `fr-gen` 首版：从表生成 C + Python 编解码
-3. round-trip 回归：`.fr` ↔ `.frb` 逐字节相等，CMNT 保注释
-4. `fr-as` / `fr-dis` / `fr-dump` 最小可用
-5. LÖVE 渲染端吃第一份手写 FR 流
-
-并行的取证线见 `docs/fr-spec.md` §12（首版实收频度 = love-src/testing 调用统计；无头资产 API 面；表重建事件实测）。
+```bash
+pytest tests/   # 101 项：格式/编解码/round-trip/捕获/回放/对拍/闭环
+```
