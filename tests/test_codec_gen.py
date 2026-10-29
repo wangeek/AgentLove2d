@@ -131,3 +131,34 @@ def test_px_rect_and_passthrough():
     _, g4 = fc.parse_line_px(px)
     assert g4["y"] == 150.5 and tuple(g4["color"]) == (255, 0, 255, 255)
     assert fc.render_line_px("rt", {"target": 3}) == "rt 3"
+
+
+# ---------------- B15 增量扩展行型（S/pd/rdp/rdm） ----------------
+
+def test_delta_rows_roundtrip():
+    """扩展行型 render/parse round-trip（基座样本豁免的补充覆盖）。"""
+    cases = [
+        ("S", {"ref": 3}, "S 3"),
+        ("pd", {"asset": 7, "k": 2, "param": "x", "val": 102.0}, "pd 7 2 x 102.000000"),
+        ("rdm", {"pos": 5}, "rdm 5"),
+    ]
+    for op, fields, line in cases:
+        assert fc.render_line(op, fields) == line, (op, fields)
+        got_op, got = fc.parse_line(line)
+        assert got_op == op and got == fields, (line, got_op, got)
+
+
+def test_delta_rdp_embeds_px_line():
+    """rdp 内嵌 :px 行（递归 token——line 是带引号 str，含空格不撕行）。"""
+    fields = {"pos": 4, "line": "D 7 0 100 200 0.000000 1.000000 1.000000"}
+    line = fc.render_line("rdp", fields)
+    assert line == 'rdp 4 "D 7 0 100 200 0.000000 1.000000 1.000000"', line
+    got_op, got = fc.parse_line(line)
+    assert got_op == "rdp" and got == fields
+
+
+def test_delta_pd_param_whitelist():
+    """pd param 白名单（x/y/rot/sx/sy/ox/oy）外的参数拒收。"""
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="param"):
+        fc.parse_line("pd 7 2 bogus 1.000000")

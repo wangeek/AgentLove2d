@@ -406,6 +406,12 @@ def render_line(op, fields):
         raise ValueError("未知 op: %r" % op) from None
     if op == "asset" or spec["variadic"] == "payload...":
         return " ".join(_render_asset(fields))
+    # B15 增量行型特化：pd 的 param=裸受控 token（白名单），val 恒 %.6f 绝对值
+    if op == "pd":
+        if fields["param"] not in ("x", "y", "rot", "sx", "sy", "ox", "oy"):
+            raise ValueError("pd param 非法: %r" % fields["param"])
+        return "pd %d %d %s %.6f" % (fields["asset"], fields["k"],
+                                     fields["param"], qf(fields["val"]))
     toks = [op]
     for name, typ in spec["fields"]:
         toks.extend(_render_tok(typ, fields[name]))
@@ -500,6 +506,14 @@ def parse_line(line):
         spec = _BY_OP[op]
     except KeyError:
         raise ValueError("未知 op: %r" % op) from None
+    # B15 增量行型特化：pd param=裸受控 token（白名单校验）
+    if op == "pd":
+        if len(toks) != 5:
+            raise ValueError("pd 行 token 数须为 5: %r" % toks)
+        if toks[3] not in ("x", "y", "rot", "sx", "sy", "ox", "oy"):
+            raise ValueError("pd param 非法: %r" % toks[3])
+        return op, {"asset": int(toks[1]), "k": int(toks[2]),
+                    "param": toks[3], "val": qf(float(toks[4]))}
     pos = 1
 
     def take():
