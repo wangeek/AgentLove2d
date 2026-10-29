@@ -24,7 +24,7 @@ def test_generated_sessions_roundtrip():
     rows = [(op, dict(f)) for op, f in fc.self_test_samples()]
     for loglvl in ("off", "base", "full"):
         for seed in (0, 1, ((1 << 64) - 1)):
-            s = dict(width=1, height=1, sha=sha, loglvl=loglvl, seed=seed,
+            s = dict(width=1, height=1, sha=sha, loglvl=loglvl, seed=seed, prec="full",
                      entries=[("cmnt", "fuzz"), ("frame", rows), ("frame", [])])
             assert fs.parse_binary(fs.dump_binary(s)) == s
             assert fs.parse_text(fs.dump_text(s)) == s

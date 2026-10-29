@@ -22,6 +22,9 @@ TAG_FRAME = 0x01
 TAG_CMNT = 0xFF
 _LOGLVL = {"off": 0, "base": 1, "full": 2}
 _LOGLVL_NAME = {v: k for k, v in _LOGLVL.items()}
+# B14 精度档（head 可选尾列 :prec；缺省 full=旧流兼容）。q64 档位名预留
+#（本批转换器只实现 px；q64 渲染待动画域需求落地）。
+_PREC = ("full", "px", "q64")
 
 
 class SessionError(Exception):
@@ -45,8 +48,13 @@ def parse_text(text):
     if not lines:
         raise SessionError("空文本：缺会话头")
     hdr = lines[0].split(" ")
-    if hdr[0] != "frb1" or len(hdr) != 6:
-        raise SessionError("第 1 行：会话头必须为 'frb1 w h sha loglvl seed'")
+    if hdr[0] != "frb1" or len(hdr) not in (6, 7):
+        raise SessionError("第 1 行：会话头必须为 'frb1 w h sha loglvl seed [:prec]'")
+    prec = hdr[6] if len(hdr) == 7 else "full"
+    if prec.lstrip(":") not in _PREC:
+        raise SessionError("第 1 行：精度档非法 %r（合法：%s）"
+                           % (prec, "|".join(":" + p for p in _PREC)))
+    prec = prec.lstrip(":")
     w, h, sha, loglvl, seed = hdr[1], hdr[2], hdr[3], hdr[4], hdr[5]
     if not (w.isdigit() and h.isdigit() and 0 < int(w) <= 65535 and 0 < int(h) <= 65535):
         raise SessionError("第 1 行：几何非法")
@@ -56,7 +64,8 @@ def parse_text(text):
         raise SessionError("第 1 行：loglvl 非法 %r" % loglvl)
     if not seed.isdigit() or int(seed) >= 1 << 64:
         raise SessionError("第 1 行：seed 非法")
-    s = dict(width=int(w), height=int(h), sha=sha, loglvl=loglvl, seed=int(seed), entries=[])
+    s = dict(width=int(w), height=int(h), sha=sha, loglvl=loglvl, seed=int(seed),
+             prec=prec, entries=[])
     cur = None  # 当前帧的 rows 列表（None = 帧外）
     for no, line in enumerate(lines[1:], start=2):
         if not line.strip():  # 空行（含纯空白行）禁入 canonical
@@ -80,7 +89,10 @@ def parse_text(text):
             if cur is None:
                 raise SessionError("第 %d 行：行必须位于 frame 块内" % no)
             try:
-                cur.append(_rc.parse_line(line))
+                # B14：按档分派（:px 流行=短名/省略形，parse_line_px 回填默认
+                # 后与 full 字段等价——Session 内部表示与档位无关）。
+                cur.append(_rc.parse_line_px(line) if prec != "full"
+                           else _rc.parse_line(line))
             except ValueError as e:
                 raise SessionError("第 %d 行：%s" % (no, e)) from e
     return s
@@ -102,6 +114,8 @@ def _validate_session(s):
         raise SessionError("loglvl 非法 %r" % (s.get("loglvl"),))
     if not (isinstance(s.get("seed"), int) and 0 <= s["seed"] < (1 << 64)):
         raise SessionError("seed 须为 [0,2^64) 整数")
+    if s.get("prec", "full") not in _PREC:
+        raise SessionError("精度档非法 %r" % (s.get("prec"),))
     for no, entry in enumerate(s["entries"]):
         if not (isinstance(entry, tuple) and len(entry) == 2):
             raise SessionError("entry %d：须为 (kind, payload) 二元组" % no)
@@ -124,9 +138,14 @@ def dump_text(s):
     二进制形态才写数字（见 dump_binary）。
     """
     _validate_session(s)
-    out = ["frb1 %d %d %s %s %d" % (s["width"], s["height"], s["sha"],
-                                    s["loglvl"], s["seed"])]
+    head = "frb1 %d %d %s %s %d" % (s["width"], s["height"], s["sha"],
+                                     s["loglvl"], s["seed"])
+    prec = s.get("prec", "full")
+    if prec != "full":  # B14：非缺省档显式标注（旧流头形零变化）
+        head += " :" + prec
+    out = [head]
     idx = 0
+    render = _rc.render_line_px if prec != "full" else _rc.render_line
     for entry_no, (kind, payload) in enumerate(s["entries"]):
         if kind == "cmnt":
             out.append("cmnt " + payload)
@@ -134,7 +153,7 @@ def dump_text(s):
             out.append("frame %d" % idx); idx += 1
             for op, fields in payload:
                 try:
-                    out.append(_rc.render_line(op, fields))
+                    out.append(render(op, fields))
                 except ValueError as e:
                     raise SessionError("entry %d：%s" % (entry_no, e)) from e
     return "\n".join(out) + "\n"
@@ -158,7 +177,8 @@ def parse_binary(data):
     if lvl not in _LOGLVL_NAME:
         raise SessionError("off %d：loglvl 非法 %d" % (off - 1, lvl))
     seed = int.from_bytes(data[off:off + 8], "little"); off += 8
-    s = dict(width=w, height=h, sha=sha, loglvl=_LOGLVL_NAME[lvl], seed=seed, entries=[])
+    s = dict(width=w, height=h, sha=sha, loglvl=_LOGLVL_NAME[lvl], seed=seed,
+             prec="full", entries=[])
     while off < len(data):
         tag = data[off]; off += 1
         if tag == TAG_CMNT:

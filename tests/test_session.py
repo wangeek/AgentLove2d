@@ -12,7 +12,7 @@ def _sample_rows():
 def _sample_session():
     return dict(width=640, height=480,
                 sha=tbl.tbl_sha256(tbl.parse(open(os.path.join(_ROOT, "tables/cmd.tbl"), encoding="utf-8").read())),
-                loglvl="base", seed=3056735,
+                loglvl="base", seed=3056735, prec="full",
                 entries=[("cmnt", "录制于演示"), ("frame", _sample_rows()), ("cmnt", "尾注"),
                          ("frame", _sample_rows()[:3])])
 
@@ -92,3 +92,69 @@ def test_cmnt_rejected_control():
     s["entries"].insert(0, ("cmnt", "bad\rnote"))
     with pytest.raises(fs.SessionError):
         fs.dump_text(s)
+
+
+# ---------------- B14 :prec 档位头 + fr-prec 转换 ----------------
+
+_MINI_FULL = (
+    "frb1 8 8 %s base 7\n" % ("0" * 64)
+    + "frame 0\n"
+    + "dt 0.016667\n"
+    + "draw 1 0 10.000000 20.000000 0.000000 1.000000 1.000000 0.000000 0.000000 255 255 255 255\n"
+    + "rect 0 5.000000 6.000000 7.000000 8.000000 0.000000 0.000000 1.000000 255 0 0 255\n"
+    + "s_crc 111\n"
+    + "d_crc 222\n"
+)
+
+
+def test_prec_header_parse():
+    """:prec 尾列可选（6 列=full 缺省；7 列校验域）；非法档拒收。"""
+    s = fs.parse_text(_MINI_FULL)
+    assert s["prec"] == "full"
+    s2 = fs.parse_text(_MINI_FULL.replace(" base 7", " base 7 :px"))
+    assert s2["prec"] == "px"
+    with pytest.raises(fs.SessionError, match="精度档"):
+        fs.parse_text(_MINI_FULL.replace(" base 7", " base 7 :zz"))
+    # dump：full 头零变化（旧流兼容）；px 头带尾标
+    assert fs.dump_text(s).splitlines()[0].endswith("7")
+    assert fs.dump_text(s2).splitlines()[0].endswith("7 :px")
+
+
+def test_px_roundtrip_byte_equal():
+    """:px 流 parse→dump 逐字节相等（px 行短名/省略形往返保持）。"""
+    px_text = fs.dump_text(fs.parse_text(_MINI_FULL.replace(" base 7", " base 7 :px")
+                                         ).copy() | {})
+    # 构造 px 形态行（parse_line_px 支持）后 dump 保形
+    px_stream = (_MINI_FULL.replace(" base 7", " base 7 :px")
+                 .replace("draw 1 0 10.000000 20.000000 0.000000 1.000000 1.000000 0.000000 0.000000 255 255 255 255",
+                          "D 1 0 10 20 0.000000 1.000000 1.000000")
+                 .replace("rect 0 5.000000 6.000000 7.000000 8.000000 0.000000 0.000000 1.000000 255 0 0 255",
+                          "R 0 5 6 7 8 0 0 1.000000 255 0 0 255"))
+    assert fs.dump_text(fs.parse_text(px_stream)) == px_stream
+
+
+def test_fr_prec_convert(tmp_path):
+    """full→px：out 行重渲染（短名+量化+省略）、d_crc 重算、段行透传。"""
+    import tools.fr_prec as fp
+
+    src = tmp_path / "in.fr"
+    src.write_bytes(_MINI_FULL.encode("utf-8"))  # LF 定版（write_text 在 Windows 会 CRLF 污染尾列）
+    out = str(tmp_path / "out.fr")
+    rc = fp.main([str(src), "-o", out, "--px"])
+    assert rc == 0
+    text = open(out, encoding="utf-8").read()
+    lines = text.splitlines()
+    assert lines[0].endswith(":px")
+    assert "D 1 0 10 20 0.000000 1.000000 1.000000" in lines  # 短名+量化+省略尾
+    assert "R 0 5 6 7 8 0 0 1.000000 255 0 0 255" in lines
+    assert "dt 0.016667" in lines and "s_crc 111" in lines    # 段行透传
+    assert not any(l.startswith("d_crc 222") for l in lines)  # 旧 d_crc 替换
+    # d_crc 独立重算对账（自检+独立重算范式）
+    import zlib
+    px_rows = [l for l in lines
+               if l.split()[0] in ("D", "R", "C", "PR", "LN", "CI", "PY", "AR", "PT")]
+    want = zlib.crc32("\n".join(px_rows).encode("utf-8"))
+    got = [l for l in lines if l.startswith("d_crc ")]
+    assert got == ["d_crc %d" % want]
+    # 幂等：px 流再转报错（须 full 输入）
+    assert fp.main([out, "-o", out + "2", "--px"]) == 1
