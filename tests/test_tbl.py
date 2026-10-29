@@ -50,7 +50,7 @@ def test_canonical_sha_stable():
 def test_real_table_parses():
     rows = tbl.parse(open("tables/cmd.tbl", encoding="utf-8").read())
     ops = [r["op"] for r in rows]
-    assert len(ops) == 21 and len(set(ops)) == 21
+    assert len(ops) == 25 and len(set(ops)) == 25  # B15：21 基座 + S/pd/rdp/rdm 扩展
     assert "draw" in ops and "s_crc" in ops and "ev" in ops
     ev = next(r for r in rows if r["op"] == "ev")
     assert ev["variadic"] == "args..."

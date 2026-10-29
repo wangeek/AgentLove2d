@@ -7,7 +7,7 @@ from tools import fr_codec_gen as fc
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROWS = tbl.parse(open(os.path.join(_ROOT, "tables", "cmd.tbl"), encoding="utf-8").read())
-BASE_SHA = "7f3427691b6e405a65cabe1d00709f3ee085b9e569d1b3764fb84b00c60bafa6"
+BASE_SHA = "1bd74035c2e8e25e4a6ab54bbb32c8ff59bfc3b16e21cf5b84c6d0094ec11292"
 
 def test_ops_match_table():
     assert fc.TBL_SHA256 == tbl.tbl_sha256(ROWS) == BASE_SHA
@@ -40,7 +40,10 @@ def test_quantized_float_layout():
 def test_every_op_roundtrips():
     samples = fc.self_test_samples()
     ops_with_sample = {op for op, _ in samples}
-    assert ops_with_sample == {r["op"] for r in ROWS}  # 全覆盖
+    # B15：ext 扩展行型（S/pd/rdp/rdm）不进 selftest（C emit 不产增量，
+    # 先例=font 引用形态）；round-trip 归专项测试 + 真流实测。
+    base_ops = {r["op"] for r in ROWS if r["status"] != "ext"}
+    assert ops_with_sample == base_ops  # 基座全覆盖
     for op, fields in samples:
         buf = fc.encode_row(op, fields)
         assert fc.decode_row(memoryview(buf)) == (op, fields)   # 二进制全员

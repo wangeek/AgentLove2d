@@ -421,7 +421,7 @@ _H_DECL_RE = re.compile(r"^int (fr_encode_[a-z0-9_]+)\(.*\);$", re.M)
 _DRAW_DECL = ("int fr_encode_draw(fr_buf *b, uint32_t tex, uint32_t quad, float x, float y, "
               "float rot, float sx, float sy, float ox, float oy, fr_rgba8 color);")
 _FR_VARIANT_TYPEDEF = "typedef struct { uint8_t tag; double num; const char *str; } fr_variant;"
-_IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_IDENT_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")  # B15：扩展行型 S 大写起头合法
 
 # C 形参映射（封版于 B3a 计划的签名映射表）：表类型 → C 形参类型文本（直接前缀
 # 在形参名前，故除指针外均带尾随空格）；f32[] 特殊（const float *<名>,
@@ -984,7 +984,7 @@ _GOLDEN_PTS_CAP = 64     # pts 出参 float 元素容量（= 32 点）
 _GOLDEN_ROW_CAP = 2048   # 单行重编码缓冲
 
 
-def _golden_facts(rows):
+def _golden_facts(rows, full_sha=None):
     """读 tests/golden/sample.frb → (bytes, 帧数, 首帧行数, cmnt 数)。
 
     生成期守卫：表指纹须与 golden 头内嵌 sha 一致（改表先重产 golden）；
@@ -1000,10 +1000,11 @@ def _golden_facts(rows):
     root = pathlib.Path(__file__).resolve().parents[2]
     data = (root / "tests" / "golden" / "sample.frb").read_bytes()
     s = fs.parse_binary(data)
-    if s["sha"] != tbl_sha256(rows):
+    _sha = full_sha or tbl_sha256(rows)  # B15：ext 过滤后须传全表 sha
+    if s["sha"] != _sha:
         raise ValueError("golden sample.frb 表指纹 %s… 与当前 cmd.tbl %s… 不符："
                          "改表后须先重产 golden（l0 产流 + fr_as 封装）再再生 C"
-                         % (s["sha"][:12], tbl_sha256(rows)[:12]))
+                         % (s["sha"][:12], _sha[:12]))
     frames = [p for k, p in s["entries"] if k == "frame"]
     ncmnt = sum(1 for k, _ in s["entries"] if k == "cmnt")
     if not frames:
@@ -1130,13 +1131,13 @@ def _golden_asset_case():
     return lines
 
 
-def _golden_section(rows):
+def _golden_section(rows, full_sha=None):
     """golden 闭环段文本：嵌入全字节 + entry 迭代 + 逐行解码-重编码 memcmp。
 
     返回 (文本, 帧数, 首帧行数, cmnt 数)——计数同时供 _ST_TEMPLATE 尾部
     "C DECODE OK" 行注入（同源单一真值）。
     """
-    data, nf, nr, ncm = _golden_facts(rows)
+    data, nf, nr, ncm = _golden_facts(rows, full_sha)
     rows_by_op = {r["op"]: r for r in rows}
     cases = "\n".join(_golden_case(rows_by_op, r["op"]) for r in rows)
     hex_txt = data.hex()
@@ -1321,7 +1322,7 @@ def _check_identifiers(rows):
         raise ValueError("op 名不是合法 C 标识符片段: %s" % bad)
 
 
-def _self_check(h, rows):
+def _self_check(h, rows, full_sha=None):
     """生成后自检：重新 parse 生成的 .h，逐项断言与源一致——模板或表坏了当场报。
 
     校验项：sha 指纹、口径常量名值、枚举条目数（= 行数 + CMNT）、枚举值按表行序、
@@ -1331,7 +1332,7 @@ def _self_check(h, rows):
     from tools.fr_gen.tbl import tbl_sha256  # 惰性导入：__main__ 直跑时先修 sys.path
 
     m = _H_SHA_RE.search(h)
-    if not m or m.group(1) != tbl_sha256(rows):
+    if not m or m.group(1) != (full_sha or tbl_sha256(rows)):  # B15：ext 过滤传全表 sha
         raise ValueError("自检失败：FR_CODEC_TBL_SHA256 与表指纹不符")
     defs = dict(_H_DEF_RE.findall(h))
     want = dict(("FR_VARIANT_TAG_%s" % n, str(v)) for n, v in _VARIANT_TAG_VALUES)
@@ -1381,24 +1382,30 @@ def generate(rows, out_dir, extra=None):
     """
     from tools.fr_gen.tbl import tbl_sha256  # 惰性导入：__main__ 直跑时先修 sys.path
 
+    # B15：ext 扩展行型（S/pd/rdp/rdm）不进 C 目标——C emit 不产增量
+    #（录制端 diff 编码器是手写层）、C 解码不走 fr_dec（离线解析器手写
+    # 前缀匹配）；扩展集纪律=协商产物不进基座。**指纹按全表算（含 ext，
+    # 过滤前先取）**——双目标指纹同源纪律。
+    _full_tbl_sha = tbl_sha256(rows)
+    rows = [r for r in rows if r["status"] != "ext"]
     _check_identifiers(rows)
     if len(rows) > 255:
         raise ValueError("表行数 %d 超 255：第 0x100 行起 opcode 与 FR_OP_CMNT=0xFF 值域碰撞" % len(rows))
     h = (_H_TEMPLATE
-         .replace("@@SHA@@", tbl_sha256(rows))
+         .replace("@@SHA@@", _full_tbl_sha)
          .replace("@@CONSTS@@", _const_block())
          .replace("@@OPS@@", _ops_enum(rows))
          .replace("@@FN_DECLS@@", _fn_decls(rows)))
     c = (_C_TEMPLATE
          .replace("@@EMITS@@", _emits_block(rows))
          .replace("@@DECODE@@", _DECODE_CORE.replace("@@DECMETA@@", _dec_meta(rows))))
-    golden, nf, nr, ncm = _golden_section(rows)
+    golden, nf, nr, ncm = _golden_section(rows, _full_tbl_sha)
     st = (_selftest_c(rows)
           .replace("@@GOLDEN@@", golden)
           .replace("@@NF@@", str(nf))
           .replace("@@NR@@", str(nr))
           .replace("@@NCM@@", str(ncm)))
-    _self_check(h, rows)
+    _self_check(h, rows, _full_tbl_sha)
     import pathlib
 
     out = pathlib.Path(out_dir)

@@ -24,6 +24,10 @@ local ops = {
     ['scissor'] = { fields = { {'x', 'f32'}, {'y', 'f32'}, {'w', 'f32'}, {'h', 'f32'} }, variadic = nil, section = 'out' },
     ['s_crc'] = { fields = { {'crc', 'u32'} }, variadic = nil, section = 'end' },
     ['d_crc'] = { fields = { {'crc', 'u32'} }, variadic = nil, section = 'end' },
+    ['S'] = { fields = { {'ref', 'u32'} }, variadic = nil, section = 'out' },
+    ['pd'] = { fields = { {'asset', 'u32'}, {'k', 'u32'}, {'param', 'str'}, {'val', 'f32'} }, variadic = nil, section = 'out' },
+    ['rdp'] = { fields = { {'pos', 'u32'}, {'line', 'str'} }, variadic = nil, section = 'out' },
+    ['rdm'] = { fields = { {'pos', 'u32'} }, variadic = nil, section = 'out' },
 }
 ops.kinds = { image = 0, canvas = 1, quad = 2, font = 3 }
 

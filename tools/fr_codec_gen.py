@@ -5,7 +5,7 @@ import struct
 
 from tools.fr_gen.quantize import qf
 
-TBL_SHA256 = "7f3427691b6e405a65cabe1d00709f3ee085b9e569d1b3764fb84b00c60bafa6"
+TBL_SHA256 = "1bd74035c2e8e25e4a6ab54bbb32c8ff59bfc3b16e21cf5b84c6d0094ec11292"
 
 OPS = [
     {"op": "dt", "section": "head", "opcode": 0, "fields": [("val", "f32")], "variadic": None},
@@ -28,7 +28,11 @@ OPS = [
     {"op": "rt", "section": "out", "opcode": 17, "fields": [("target", "u32")], "variadic": None},
     {"op": "scissor", "section": "out", "opcode": 18, "fields": [("x", "f32"), ("y", "f32"), ("w", "f32"), ("h", "f32")], "variadic": None},
     {"op": "s_crc", "section": "end", "opcode": 19, "fields": [("crc", "u32")], "variadic": None},
-    {"op": "d_crc", "section": "end", "opcode": 20, "fields": [("crc", "u32")], "variadic": None}
+    {"op": "d_crc", "section": "end", "opcode": 20, "fields": [("crc", "u32")], "variadic": None},
+    {"op": "S", "section": "out", "opcode": 21, "fields": [("ref", "u32")], "variadic": None},
+    {"op": "pd", "section": "out", "opcode": 22, "fields": [("asset", "u32"), ("k", "u32"), ("param", "str"), ("val", "f32")], "variadic": None},
+    {"op": "rdp", "section": "out", "opcode": 23, "fields": [("pos", "u32"), ("line", "str")], "variadic": None},
+    {"op": "rdm", "section": "out", "opcode": 24, "fields": [("pos", "u32")], "variadic": None}
 ]
 
 _BY_OP = {d["op"]: d for d in OPS}

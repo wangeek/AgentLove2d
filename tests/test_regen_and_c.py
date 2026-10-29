@@ -30,10 +30,23 @@ def test_c_regen_no_drift(tmp_path):
     assert (d / "fr_codec.c").read_text(encoding="utf-8") == C
 
 
+def in_h_sha():
+    """头文件内嵌的指纹（#define 行取值——全表 sha，含 ext）。"""
+    for ln in H.splitlines():
+        if ln.startswith("#define FR_CODEC_TBL_SHA256"):
+            return ln.split('"')[1]
+    return ""
+
+
 def test_c_api_face():
-    assert "FR_CODEC_GENERATED_H" in H and "FR_CODEC_TBL_SHA256" in H
-    assert tbl.tbl_sha256(ROWS) in H
-    for i, r in enumerate(ROWS):
+    assert "FR_CODEC_GENERATED_H" in H and in_h_sha() == tbl.tbl_sha256(ROWS)
+    # B15：C 目标过滤 ext 扩展行（S/pd/rdp/rdm 不进基座）；枚举序号
+    # 按过滤后行序（0 起连续），指纹仍为全表 sha。
+    base = [r for r in ROWS if r["status"] != "ext"]
+    # B15：C 目标过滤 ext 扩展行（S/pd/rdp/rdm 不进基座）；枚举序号
+    # 按过滤后行序（0 起连续），指纹仍为全表 sha。
+    base = [r for r in ROWS if r["status"] != "ext"]
+    for i, r in enumerate(base):
         assert "FR_OP_%s = 0x%02X" % (r["op"].upper(), i) in H
         if r["op"] == "asset":  # asset 四合一，C 侧拆四具名函数
             for kind in ("image", "canvas", "quad", "font"):

@@ -51,3 +51,7 @@ rt	out	target u32	love.graphics.setCanvas（:2933）	sealed	0=屏幕，否则 ca
 scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7。短名 SC
 s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B6 物理形态=注册状态根子图 CRC（D8 裁定）；B3b 样机已退役
 d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量；B7a 已兑现（录制侧当帧 out 行 CRC，end 段双行）
+S	out	ref u32	frame-delta 扩展集（B15）	ext	same：本帧行集与帧 ref 全同（dt/ev 段行独立）；d_crc=CRC("same:<ref>")；能力协商=head :prec 复合 +d；链深上限 I 帧兜底
+pd	out	asset u32 k u32 param str val f32	frame-delta 扩展集（B15）	ext	paramdelta：(asset,k) 行身份（React key 模型，帧内引用序消歧）单参数绝对值更新（幂等优先）；param 白名单 x/y/rot/sx/sy/ox/oy；身份配对失败编码器降级 rd（路线图 §5.3-7）
+rdp	out	pos u32 line str	frame-delta 扩展集（B15）	ext	行插入：pos=帧内行序（构造性定位，非跨帧身份——身份纪律仅管 pd 配对）；line=完整 :px 行（递归解析）
+rdm	out	pos u32	frame-delta 扩展集（B15）	ext	行删除：pos=帧内行序（同 rdp 定位口径）

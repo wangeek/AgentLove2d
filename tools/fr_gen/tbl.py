@@ -12,7 +12,7 @@ import hashlib
 TYPES = {"u8", "u32", "f32", "f64", "rgba8", "str", "variant", "f32[]"}
 
 SECTIONS = {"head", "in", "log", "out", "end"}
-STATUSES = {"sealed", "draft"}
+STATUSES = {"sealed", "draft", "ext"}
 VARIADIC_MARKS = {"args...", "payload..."}
 
 

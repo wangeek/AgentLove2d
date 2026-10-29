@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define FR_CODEC_TBL_SHA256 "7f3427691b6e405a65cabe1d00709f3ee085b9e569d1b3764fb84b00c60bafa6"
+#define FR_CODEC_TBL_SHA256 "1bd74035c2e8e25e4a6ab54bbb32c8ff59bfc3b16e21cf5b84c6d0094ec11292"
 
 /* 口径常量（与 Python 生成物 tools/fr_codec_gen.py 同名同值，跨目标相等测试锚） */
 #define FR_VARIANT_TAG_NUM 1
