@@ -547,6 +547,132 @@ def parse_line(line):
     return op, fields
 
 
+# ---- B14 :px 紧凑档（短名 + 尾部默认省略 + 像素量化渲染） ----
+# 设计：docs/plans/2026-10-29-b13-entropy-roadmap-design.md §3 + 附录 5.3/5.4。
+# 语义恒定：render_line_px(fields) 与 render_line(fields) 解码等价——
+# parse_line_px 回填默认后字段与 parse_line 结果相等（数值经 qf 同域）。
+# 省略=尾部连续命中默认（位置参数约束：中段不省；链遇非默认字段即断）。
+# B13 实测准入：draw 的 color=white/oy=0/ox=0（sx/sy 出局——battle 命中
+# 0.00，链在 sy 前截断）；rect/print 的 color 无稳定默认 → 本批不省。
+# 量化=坐标/尺寸字段值整时 %.0f（SVG path 数字风格），非整保留 %.6f。
+
+_PX_SHORT = {"clear": "C", "draw": "D", "print": "PR", "rect": "R",
+             "line": "LN", "circle": "CI", "poly": "PY", "arc": "AR",
+             "points": "PT", "scissor": "SC"}
+_PX_SHORT_BY = {v: k for k, v in _PX_SHORT.items()}
+
+_PX_OMIT = {
+    "draw": [("color", (255, 255, 255, 255)), ("oy", 0.0), ("ox", 0.0)],
+}
+
+_PX_WHOLE = {"x", "y", "w", "h", "ox", "oy", "r", "a1", "a2", "rx", "ry"}
+
+_WHITE = (255, 255, 255, 255)
+
+
+def _px_is_default(name, typ, v, dflt):
+    if typ == "rgba8":
+        try:
+            return tuple(int(c) for c in v) == tuple(dflt)
+        except TypeError:
+            return False
+    if typ in ("f32", "f64"):
+        return qf(v) == qf(dflt)
+    return v == dflt
+
+
+def _px_f32(name, v):
+    f = qf(v)
+    if name in _PX_WHOLE and f == int(f):
+        return "%d" % int(f)
+    return "%.6f" % f
+
+
+def render_line_px(op, fields):
+    """:px 档行渲染（fields 同 render_line 的入参形态）。"""
+    try:
+        spec = _BY_OP[op]
+    except KeyError:
+        raise ValueError("未知 op: %r" % op) from None
+    if op == "asset" or spec["variadic"]:
+        return render_line(op, fields)  # 段行/变长行：px 档与 full 同形
+    omit = _PX_OMIT.get(op, ())
+    # 尾部省略：从最后一个字段往前，命中省略表默认即砍，遇非默认/出表即断
+    keep = dict(fields)
+    for name, dflt in omit:
+        typ = dict(spec["fields"]).get(name)
+        if typ is not None and name in keep and _px_is_default(name, typ, keep[name], dflt):
+            del keep[name]
+        else:
+            break
+    toks = [_PX_SHORT.get(op, op)]
+    for name, typ in spec["fields"]:
+        if name not in keep:
+            break
+        v = keep[name]
+        if typ in ("f32", "f64"):
+            toks.append(_px_f32(name, v))
+        else:
+            toks.extend(_render_tok(typ, v))
+    return " ".join(toks)
+
+
+def parse_line_px(line):
+    """:px 档行解析：短名映射 + 尾部缺省回填（与 parse_line 字段等价）。"""
+    toks = _tokenize(line)
+    if not toks:
+        raise ValueError("空行")
+    op = _PX_SHORT_BY.get(toks[0], toks[0])
+    try:
+        spec = _BY_OP[op]
+    except KeyError:
+        raise ValueError("未知 op: %r" % toks[0]) from None
+    if op == "asset" or spec["variadic"]:
+        return parse_line(line)  # 同形行直走 full 解析
+    omit = dict(_PX_OMIT.get(op, ()))
+    pos = 1
+    fields = {}
+    nfields = len(spec["fields"])
+    for i, (name, typ) in enumerate(spec["fields"]):
+        # 该字段及之后全部耗尽 → 余下字段须在省略表内（尾部连续），回填默认
+        if pos >= len(toks):
+            for nm, tp in spec["fields"][i:]:
+                if nm not in omit:
+                    raise ValueError("%s 行尾缺字段 %s（非可省略项）" % (op, nm))
+                d = omit[nm]
+                fields[nm] = tuple(d) if tp == "rgba8" else d
+            break
+        tok = toks[pos]
+        if typ in ("u8", "u32"):
+            fields[name] = int(tok)
+            pos += 1
+        elif typ in ("f32", "f64"):
+            fields[name] = qf(float(tok))
+            pos += 1
+        elif typ == "rgba8":
+            fields[name] = (int(toks[pos]), int(toks[pos + 1]),
+                            int(toks[pos + 2]), int(toks[pos + 3]))
+            pos += 4
+        elif typ == "str":
+            if len(tok) < 2 or tok[0] != '"' or tok[-1] != '"':
+                raise ValueError("%s str token 缺引号: %r" % (op, tok))
+            fields[name] = _unescape(tok[1:-1])
+            pos += 1
+        elif typ == "f32[]":
+            count = int(tok)
+            pos += 1
+            pts = []
+            for _ in range(count):
+                pts.append((qf(float(toks[pos])), qf(float(toks[pos + 1]))))
+                pos += 2
+            fields[name] = pts
+        else:
+            raise ValueError("%s 字段类型 %s 不支持 px 档" % (op, typ))
+    if pos != len(toks):
+        raise ValueError("%s 行多余 token: %r" % (op, toks[pos:]))
+    return op, fields
+
+
 def self_test_samples():
     """每 op 至少一条自检样本（encode→decode round-trip 基准；asset 按 kind 各一）。
 
