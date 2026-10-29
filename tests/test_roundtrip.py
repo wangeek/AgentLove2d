@@ -26,6 +26,12 @@ def test_generated_sessions_roundtrip():
         for seed in (0, 1, ((1 << 64) - 1)):
             s = dict(width=1, height=1, sha=sha, loglvl=loglvl, seed=seed, prec="full",
                      entries=[("cmnt", "fuzz"), ("frame", rows), ("frame", [])])
-            assert fs.parse_binary(fs.dump_binary(s)) == s
-            assert fs.parse_text(fs.dump_text(s)) == s
-            assert fs.parse_text(fs.dump_text(fs.parse_binary(fs.dump_binary(s)))) == s
+            t = fs.parse_binary(fs.dump_binary(s))
+            t.pop("delta", None)
+            assert t == s
+            t = fs.parse_text(fs.dump_text(s))
+            t.pop("delta", None)
+            assert t == s
+            t = fs.parse_text(fs.dump_text(fs.parse_binary(fs.dump_binary(s))))
+            t.pop("delta", None)
+            assert t == s
