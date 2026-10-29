@@ -33,13 +33,22 @@
 - [ ] 实现（模板扩展，扩展集行型走独立函数段，不污染基座生成逻辑）
 - [ ] Commit
 
-### Task 3: fr_session 增量形态 + 展开器
+### Task 3: C 侧展开器（生产路径）+ Python 对拍工具（用户架构修正 2026-10-29）
 
-**Files:** tools/fr_session.py、tests/test_session.py
+**Files:** fr_capture.cpp（fork，离线解析+展开）、tools/fr_delta_check.py（对拍工具）、tests
 
-- [ ] head 协商：`:px+d`（prec 列复合解析）；frame 行 `frame <n>` 不变（首版 ref 恒 n-1，免帧头改动——S 行自带 ref，链式引用由展开器解）
-- [ ] 展开器 `expand_delta(session) -> 全量 session`（工具侧验证/对拍用：S 查 ref 帧、pd 按 (asset,k) 配对改参、rdp/rdm 按行序编辑脚本应用——语义与录制端 diff 对称）
-- [ ] TDD：增量流→展开→与全量流 entries 逐行相等；d_crc 对账（same 帧=CRC("same:n")、delta 帧=解码后行集 CRC）
+> 用户裁定：展开器=生产热路径，归 C（与 capture_exec_row 同地，零拷贝）；
+> Python expand_delta 降级为双实现交叉验证工具（自检+独立重算范式），
+> 不是生产路径。工具集 Python→C/Rust 重构：记账缓行——Python 全在离线
+> 批处理（瓶颈=子进程启动，非解析），热路径录制/回放已在 C；串流落地
+> 后按 benchmark 工具耗时行再定重构对象。
+
+- [ ] C 离线解析器收容 S/pd/rdp/rdm + 帧展开（展开后行集走既有 exec；
+      S 帧 D_CRC=解码后行集回读）
+- [ ] tools/fr_delta_check.py：独立展开（纯 Python）→ 与 C 离线回放的
+      D_CRC 对账（双实现交叉验证）
+- [ ] TDD：构造 mini 增量流（I/S/pd/rdp/rdm）→ C 回放 rc=0 + py 展开
+      行集相等 + d_crc 对账（same 帧=CRC("same:n")）
 - [ ] Commit
 
 ### Task 4: C 侧 P1 编码器 + 离线解码（fork）
