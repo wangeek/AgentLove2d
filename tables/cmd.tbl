@@ -38,16 +38,16 @@ timer	in	slot u32 id u32	update(dt) 结算到期合成	sealed	内核定时器到
 rngc	log	seed_after u32	love.math.random 边界（boot 层 math.random 已归一到 love.math，单咽喉）	sealed	base 级收录；对拍必需品
 st	log	obj u32 key str val variant	方案A 堆镜像 diff 物理 records（docs/love2d-gap.md §四）	draft	full 级；路径解析=消费端 logical decoding（登记表+epoch）；表重建事件=整表重发；
 err	log	what str	未收录 API 调用/兜底触发/表重建计数	sealed	豁免于 off 级：忠实性事实不可关
-clear	out	color rgba8	love.graphics.clear（wrap_Graphics.cpp:2912）	sealed	freq=54
-draw	out	tex u32 quad u32 x f32 y f32 rot f32 sx f32 sy f32 ox f32 oy f32 color rgba8	love.graphics.draw（:2332，注册表 :2984）	sealed	tex=image/canvas 资产号；quad 0=整图，否则 quad 资产号；翻转=sx/sy 负值；color 每行自带（setColor 折参数） freq=24
-print	out	font u32 text str x f32 y f32 rot f32 sx f32 sy f32 color rgba8	love.graphics.print（:2988）	sealed	printf freq=4 已取证、收录判定随 B1 实收复核（§12）；print freq=8
-rect	out	mode u8 x f32 y f32 w f32 h f32 rx f32 ry f32 width f32 color rgba8	love.graphics.rectangle（:3012）	sealed	mode: 0=fill 1=line；rx/ry 圆角；width 线宽（line 模式） freq=42
-line	out	pts f32[] width f32 color rgba8	love.graphics.line（:3011）	sealed	freq=11
-poly	out	mode u8 pts f32[] color rgba8	love.graphics.polygon（:3016）	sealed	freq=3
-circle	out	mode u8 x f32 y f32 r f32 seg u32 color rgba8	love.graphics.circle（:3013）	sealed	freq=6
-arc	out	mode u8 arctype u8 x f32 y f32 r f32 a1 f32 a2 f32 seg u32 color rgba8	love.graphics.arc（:3015）	sealed	arctype: pie/open/closed freq=11
-points	out	pts f32[] size f32 color rgba8	love.graphics.points（:3010）	sealed	freq=3
+clear	out	color rgba8	love.graphics.clear（wrap_Graphics.cpp:2912）	sealed	freq=54。短名 C
+draw	out	tex u32 quad u32 x f32 y f32 rot f32 sx f32 sy f32 ox f32 oy f32 color rgba8	love.graphics.draw（:2332，注册表 :2984）	sealed	tex=image/canvas 资产号；quad 0=整图，否则 quad 资产号；翻转=sx/sy 负值；color 每行自带（setColor 折参数） freq=24。B14 :px 档省略（B13 双场景准入）：rot=0 ox=0 oy=0 color=white（sx/sy 出局——battle 命中 0）；短名 D
+print	out	font u32 text str x f32 y f32 rot f32 sx f32 sy f32 color rgba8	love.graphics.print（:2988）	sealed	printf freq=4 已取证、收录判定随 B1 实收复核（§12）；print freq=8。短名 PR
+rect	out	mode u8 x f32 y f32 w f32 h f32 rx f32 ry f32 width f32 color rgba8	love.graphics.rectangle（:3012）	sealed	mode: 0=fill 1=line；rx/ry 圆角；width 线宽（line 模式） freq=42。B14 :px 档省略：rx=0 ry=0 width=1；短名 R
+line	out	pts f32[] width f32 color rgba8	love.graphics.line（:3011）	sealed	freq=11。短名 LN
+poly	out	mode u8 pts f32[] color rgba8	love.graphics.polygon（:3016）	sealed	freq=3。短名 PY
+circle	out	mode u8 x f32 y f32 r f32 seg u32 color rgba8	love.graphics.circle（:3013）	sealed	freq=6。短名 CI
+arc	out	mode u8 arctype u8 x f32 y f32 r f32 a1 f32 a2 f32 seg u32 color rgba8	love.graphics.arc（:3015）	sealed	arctype: pie/open/closed freq=11。短名 AR
+points	out	pts f32[] size f32 color rgba8	love.graphics.points（:3010）	sealed	freq=3。短名 PT
 rt	out	target u32	love.graphics.setCanvas（:2933）	sealed	0=屏幕，否则 canvas 资产号；out 段为有序流，rt 行切换目标；canvas 间合成=draw 引用 canvas 资产 freq=122
-scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7
+scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7。短名 SC
 s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B6 物理形态=注册状态根子图 CRC（D8 裁定）；B3b 样机已退役
 d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量；B7a 已兑现（录制侧当帧 out 行 CRC，end 段双行）
