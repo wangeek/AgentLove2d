@@ -11,8 +11,11 @@
 #   其余行（frame/dt/asset/ev/st/err/s_crc/cmnt）full 渲染透传（状态与档位无关）
 # 帧内行序保持 canonical：dt/asset/ev/st/err/out/s_crc → d_crc 恒帧尾。
 import argparse
+import os
 import sys
 import zlib
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tools.fr_codec_gen as fc
 import tools.fr_session as fs
