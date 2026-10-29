@@ -25,6 +25,9 @@ _LOGLVL_NAME = {v: k for k, v in _LOGLVL.items()}
 # B14 精度档（head 可选尾列 :prec；缺省 full=旧流兼容）。q64 档位名预留
 #（本批转换器只实现 px；q64 渲染待动画域需求落地）。
 _PREC = ("full", "px", "q64")
+# B15 增量协商标记（head 可选尾 token "+d"——独立于 :prec；可组合
+# ":px +d" 或单独 "+d"=full 档增量）。
+_DELTA_MARK = "+d"
 
 
 class SessionError(Exception):
@@ -48,13 +51,19 @@ def parse_text(text):
     if not lines:
         raise SessionError("空文本：缺会话头")
     hdr = lines[0].split(" ")
-    if hdr[0] != "frb1" or len(hdr) not in (6, 7):
-        raise SessionError("第 1 行：会话头必须为 'frb1 w h sha loglvl seed [:prec]'")
-    prec = hdr[6] if len(hdr) == 7 else "full"
-    if prec.lstrip(":") not in _PREC:
-        raise SessionError("第 1 行：精度档非法 %r（合法：%s）"
-                           % (prec, "|".join(":" + p for p in _PREC)))
-    prec = prec.lstrip(":")
+    # B15：尾 token 可为 :prec / +d 两个可选标记（0-2 个）
+    tail = hdr[6:]
+    prec, delta = "full", False
+    for t in tail:
+        if t == _DELTA_MARK:
+            delta = True
+        elif t.lstrip(":") in _PREC:
+            prec = t.lstrip(":")
+        else:
+            raise SessionError("第 1 行：头尾标记非法 %r（合法：:prec（%s）/+d）"
+                               % (t, "|".join(":" + p for p in _PREC)))
+    if len(hdr) < 6 or len(hdr) > 8 or hdr[0] != "frb1":
+        raise SessionError("第 1 行：会话头必须为 'frb1 w h sha loglvl seed [:prec] [+d]'")
     w, h, sha, loglvl, seed = hdr[1], hdr[2], hdr[3], hdr[4], hdr[5]
     if not (w.isdigit() and h.isdigit() and 0 < int(w) <= 65535 and 0 < int(h) <= 65535):
         raise SessionError("第 1 行：几何非法")
@@ -65,7 +74,7 @@ def parse_text(text):
     if not seed.isdigit() or int(seed) >= 1 << 64:
         raise SessionError("第 1 行：seed 非法")
     s = dict(width=int(w), height=int(h), sha=sha, loglvl=loglvl, seed=int(seed),
-             prec=prec, entries=[])
+             prec=prec, delta=delta, entries=[])
     cur = None  # 当前帧的 rows 列表（None = 帧外）
     for no, line in enumerate(lines[1:], start=2):
         if not line.strip():  # 空行（含纯空白行）禁入 canonical
@@ -89,10 +98,15 @@ def parse_text(text):
             if cur is None:
                 raise SessionError("第 %d 行：行必须位于 frame 块内" % no)
             try:
-                # B14：按档分派（:px 流行=短名/省略形，parse_line_px 回填默认
-                # 后与 full 字段等价——Session 内部表示与档位无关）。
-                cur.append(_rc.parse_line_px(line) if prec != "full"
-                           else _rc.parse_line(line))
+                # B15：增量行（S/pd/rdp/rdm）原样保留 raw-line（Session 增
+                # "raw" 键——展开器消费；rdp 嵌套引号 print 行不做 token 化）。
+                if line.startswith(("S ", "pd ", "rdp ", "rdm ")):
+                    cur.append((line.split(" ")[0], {"raw": line}))
+                else:
+                    # B14：按档分派（:px 流行=短名/省略形，parse_line_px 回填默认
+                    # 后与 full 字段等价——Session 内部表示与档位无关）。
+                    cur.append(_rc.parse_line_px(line) if prec != "full"
+                               else _rc.parse_line(line))
             except ValueError as e:
                 raise SessionError("第 %d 行：%s" % (no, e)) from e
     return s
@@ -143,6 +157,8 @@ def dump_text(s):
     prec = s.get("prec", "full")
     if prec != "full":  # B14：非缺省档显式标注（旧流头形零变化）
         head += " :" + prec
+    if s.get("delta", False):  # B15：增量协商标记
+        head += " +d"
     out = [head]
     idx = 0
     render = _rc.render_line_px if prec != "full" else _rc.render_line
@@ -151,9 +167,14 @@ def dump_text(s):
             out.append("cmnt " + payload)
         else:
             out.append("frame %d" % idx); idx += 1
-            for op, fields in payload:
+            for row in payload:
                 try:
-                    out.append(render(op, fields))
+                    # B15：增量行 raw 原样（{"raw": line}）；其余 op 渲染
+                    if isinstance(row, dict) and "raw" in row:
+                        out.append(row["raw"])
+                    else:
+                        op, fields = row
+                        out.append(render(op, fields))
                 except ValueError as e:
                     raise SessionError("entry %d：%s" % (entry_no, e)) from e
     return "\n".join(out) + "\n"

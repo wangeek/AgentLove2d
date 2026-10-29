@@ -12,7 +12,7 @@ def _sample_rows():
 def _sample_session():
     return dict(width=640, height=480,
                 sha=tbl.tbl_sha256(tbl.parse(open(os.path.join(_ROOT, "tables/cmd.tbl"), encoding="utf-8").read())),
-                loglvl="base", seed=3056735, prec="full",
+                loglvl="base", seed=3056735, prec="full", delta=False,
                 entries=[("cmnt", "录制于演示"), ("frame", _sample_rows()), ("cmnt", "尾注"),
                          ("frame", _sample_rows()[:3])])
 
@@ -22,16 +22,23 @@ def test_text_dump_parse_fixed_point():
     assert fs.parse_text(text) == s
     assert text == fs.dump_text(fs.parse_text(text))
 
+def _strip_delta(s):
+    """B15：二进制头无 +d 列——比对前剔除 parse_binary 侧的 delta 键。"""
+    s = dict(s)
+    s.setdefault("delta", False)
+    return s
+
+
 def test_binary_dump_parse_fixed_point():
     s = _sample_session()
     blob = fs.dump_binary(s)
     assert blob[:4] == b"FRB1"
-    assert fs.parse_binary(blob) == s
+    assert _strip_delta(fs.parse_binary(blob)) == s
     assert blob == fs.dump_binary(fs.parse_binary(blob))
 
 def test_cross_form_roundtrip():
     s = _sample_session()
-    assert fs.parse_binary(fs.dump_text(s) and fs.dump_binary(s)) == s
+    assert _strip_delta(fs.parse_binary(fs.dump_text(s) and fs.dump_binary(s))) == s
     assert fs.parse_text(fs.dump_text(fs.parse_binary(fs.dump_binary(s)))) == s
 
 def test_text_form_samples():
@@ -113,7 +120,7 @@ def test_prec_header_parse():
     assert s["prec"] == "full"
     s2 = fs.parse_text(_MINI_FULL.replace(" base 7", " base 7 :px"))
     assert s2["prec"] == "px"
-    with pytest.raises(fs.SessionError, match="精度档"):
+    with pytest.raises(fs.SessionError, match="头尾标记"):
         fs.parse_text(_MINI_FULL.replace(" base 7", " base 7 :zz"))
     # dump：full 头零变化（旧流兼容）；px 头带尾标
     assert fs.dump_text(s).splitlines()[0].endswith("7")
