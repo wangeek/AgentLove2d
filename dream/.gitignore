@@ -5,5 +5,4 @@
 dream/kit_jianxia/assets.txt
 dream/kit_heroes/assets.txt
 # 验收产物（Qwen3.8 生成流）——磁盘保留不入库
-dream/dream_llm.fr
-dream/dream_heroes.fr
+dream/dream_*.fr
