@@ -35,12 +35,13 @@ def crc32_rows(row_texts):
 def parse_chunk(chunk_text):
     """LLM chunk → [(帧号, [(op, fields), ...]), ...]。
 
-    chunk 形态：`frame N` 块序列，每块 st + out 内容行；块间空行宽松。
+    chunk 形态：`frame N` 块序列，每块 st + out 内容行；块间空行宽松；
+    markdown 围栏（``` 行）宽容跳过（LLM 输出习惯包裹代码块）。
     dt/asset/ev/end 行属 runner，出现即 ValueError（职责切分纪律）。
     """
     frames, cur = [], None
     for no, line in enumerate(chunk_text.split("\n"), start=1):
-        if not line.strip():
+        if not line.strip() or line.strip().startswith("```"):
             continue
         if line.startswith("frame "):
             n = line[6:]

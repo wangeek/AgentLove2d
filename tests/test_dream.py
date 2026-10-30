@@ -39,6 +39,14 @@ def test_parse_chunk_rejects_runner_rows():
             ds.parse_chunk(chunk)
 
 
+def test_parse_chunk_tolerates_markdown_fences():
+    from dream import session as ds
+    chunk = ('```\nframe 0\nclear 0 0 0 255\n```\n'
+             '```\nframe 1\nclear 0 0 0 255\n```')
+    frames = ds.parse_chunk(chunk)
+    assert [n for n, _ in frames] == [0, 1]
+
+
 def test_seal_and_roundtrip(tmp_path):
     from dream import session as ds
     frames = ds.parse_chunk(

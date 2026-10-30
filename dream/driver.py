@@ -8,6 +8,7 @@ content 可含前导空白（parse_chunk 空行宽松吸收）。
 """
 import json
 import os
+import urllib.error
 import urllib.request
 
 
@@ -41,6 +42,12 @@ class LlmDriver:
             data=json.dumps({"model": self.model, "temperature": 0,
                              "messages": [{"role": "user", "content": prompt}]}).encode(),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + self.key})
-        with urllib.request.urlopen(req, timeout=300) as r:
-            data = json.loads(r.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                data = json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            raise RuntimeError("LLM HTTP %s（网关超时/限流——减小 --chunk-frames 重试）"
+                               % e.code) from e
+        except (urllib.error.URLError, OSError) as e:
+            raise RuntimeError("LLM 网络错误: %s" % e) from e
         return data["choices"][0]["message"]["content"]

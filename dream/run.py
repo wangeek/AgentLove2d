@@ -51,6 +51,8 @@ def main(argv=None):
     ap.add_argument("--window-k", type=int, default=8)
     ap.add_argument("--directive", default="一个方块从屏幕左侧匀速走到右侧，顶栏显示进度")
     ap.add_argument("--max-retry", type=int, default=2)
+    ap.add_argument("--chunk-frames", type=int, default=0,
+                    help="每次生成请求的帧数上限（0=不限；网关超时建议 10）")
     a = ap.parse_args(argv)
     if bool(a.from_file) == a.llm:
         print("dream.run: --from-file 与 --llm 二选一", file=sys.stderr)
@@ -61,9 +63,12 @@ def main(argv=None):
     catalog = dprompt.load_catalog(a.kit)
     frames, stream_text, retry = [], "", 0
     while len(frames) < a.frames:
+        directive = a.directive
+        if a.chunk_frames > 0:
+            directive += "；本次只输出 %d 帧" % min(a.chunk_frames, a.frames - len(frames))
         prompt = dprompt.build_prompt(vocab, catalog,
                                       dprompt.sliding_window(stream_text, a.window_k),
-                                      a.directive, len(frames))
+                                      directive, len(frames))
         try:
             chunk_frames = dsession.parse_chunk(drv.generate(prompt))
             if chunk_frames[0][0] != len(frames):

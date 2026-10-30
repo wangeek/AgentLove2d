@@ -1,0 +1,4 @@
+# B18 dream：剑侠 kit 字节体（16MB hex）不入库——由 newgame 流按需再生：
+#   bash docs/plans/2026-10-30-b18-dream-runner.md T7 命令（fr_assets 抽取）
+# 本目录 assets.json（目录单）入库供人审/LLM 引用面预览。
+dream/kit_jianxia/assets.txt
