@@ -16,10 +16,11 @@ def load_vocab():
 
 
 def load_catalog(kit_dir):
-    """kit 目录单 → 目录单文本；kit 缺 assets.json 时给最小内建目录单（font=size 形）。"""
+    """kit 目录单 → 目录单文本；kit 缺 assets.json 时如实声明无资产。"""
     p = os.path.join(kit_dir, "assets.json")
     if not os.path.isfile(p):
-        return "资产目录单（内建）：1 = font 字号 14.000000（print 用）"
+        return ("资产目录单：本次无可用资产——不要书写 draw/print 行（无可引用 id），"
+                "只用矢量 op（rect/line/poly/circle/arc/points/clear）作画")
     with open(p, encoding="utf-8") as f:
         man = json.load(f)
     rows = ["资产目录单（引用只允许下列 id）："]

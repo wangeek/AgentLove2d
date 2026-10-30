@@ -61,11 +61,13 @@ def main(argv=None):
     kit_rows = load_kit_rows(a.kit)
     vocab = dprompt.load_vocab()
     catalog = dprompt.load_catalog(a.kit)
-    frames, stream_text, retry = [], "", 0
+    frames, stream_text, retry, feedback = [], "", 0, ""
     while len(frames) < a.frames:
         directive = a.directive
         if a.chunk_frames > 0:
             directive += "；本次只输出 %d 帧" % min(a.chunk_frames, a.frames - len(frames))
+        if feedback:
+            directive += feedback  # 诊断回喂（temp=0 下同 prompt 必复读——自修复靠新信息）
         prompt = dprompt.build_prompt(vocab, catalog,
                                       dprompt.sliding_window(stream_text, a.window_k),
                                       directive, len(frames))
@@ -77,6 +79,7 @@ def main(argv=None):
             frames += chunk_frames
         except (ValueError, RuntimeError) as e:
             retry += 1
+            feedback = "；上次输出被拒：%s——请严格按词汇表修正后重出" % str(e)[:300]
             if retry > a.max_retry:
                 print("dream.run: 重试上限（%d）：%s" % (a.max_retry, e), file=sys.stderr)
                 return 1
@@ -89,12 +92,14 @@ def main(argv=None):
         if bad:
             frames = frames[:len(frames) - len(chunk_frames)]
             retry += 1
+            feedback = "；上次输出被 lint 拒绝：%s——资产只可引用目录单内的 id" \
+                       % "; ".join(bad[:5])[:300]
             if retry > a.max_retry:
                 print("dream.run: 语义闸重试上限：%s" % "; ".join(bad), file=sys.stderr)
                 return 1
             continue
         stream_text = probe
-        retry = 0
+        retry, feedback = 0, ""
     frames = frames[:a.frames]
     text = dsession.write_session(
         dsession.build_session(dsession.seal_frames(frames, kit_rows, a.dt),
