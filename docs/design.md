@@ -127,9 +127,11 @@
 | B11 | FR_PLAY 视觉播放 + 大流实测修 | 回放窗口可看可关 ✅ 已完成（2026-10-28：离线画布贴屏+录制 dt 节奏 present+播完停留；实测三修——每帧 SDL 消息泵+关窗干净中断（主线程长阻塞被系统判 hung 的"绝对失去响应"）、FR_PLAY 跳逐帧 GPU 回读（判据序列归非播放路径）、离线解析器补 ev/err/st 行型分支、FR_RENDER_TIMEOUT 可调。240 帧完整流程实证：录制 rc=0（41MB）→ 播放 rc=0 完整 240 帧 → 末帧像素锚真实世界色） |
 | B12 | 手动测试体验批 + 基准线 + font 池化 | 画面保真闭环 + 性能地基 ✅ 已完成（2026-10-28/29：**画面保真**——newImage(path) 真解码 w/h（除零根因：登记 w=0→游戏 cvw/0→inf/NaN，240 帧流 5008 行垃圾）+ rows() 统一入口 NaN/Inf 防线（转 err 不进流）；原版 vs 捕获态 --auto-shot 截图逐像素一致。**体验**——FR_SHA 缺省全 0、FR_BOOT_SCRIPT 外置状态根注入（零游戏源码改动，57 模块入根，0.14→0.09s/帧）；s_crc 规模护栏常驻（全堆 6600 vs 子图 908 表）。**池化（v1.2.7）**——font 同 TTF 跨字号字节引用（文本 =srcid/二进制 len=0xFFFFFFFF+u32 src），newgame 30 帧流 39.1→23.5MB（-40%）。**docs/benchmarks.md 建立**（基准线+突破点时间序+串流档位：15fps 验证 .frb ~12Mbps 已进普通宽带区/30fps 产品 ~24）。字体格式实证：OTF/TTC/垃圾字节三态 newFont 捕获全通、OTF 字形物化实渲（PIXEL 灰阶）、回放 rc=0 零失败） |
 | B13 | 熵剖面批（度量基建） | 双场景基准锚 + fr-stats ✅ 已完成（2026-10-29：battle 动态锚（fr_boot_battle.lua 零参直切 Test Battle+advanceTurn 推进；**形态基准**——初始化含 seed 外随机，D_CRC 判据不适用）；fr_stats 四层剖面（op/参数命中/量化模拟/时间层）。**B14 设计输入**：rect+draw=99.3% 字节；省略表准入全绿（rot/ox/oy/color/width/rx/ry 双场景 1.00）但 **sx/sy=1 命中 0.00 被双场景锚纠偏**（静态 1.0/battle 0.0——单锚必错）；px+省略模拟 **-75%**；battle same 占比 0.86（B15 空间实锤）。设计真源 docs/plans/2026-10-29-b13-entropy-roadmap-design.md） |
-| B7+ | 按数据排队：~~newgame 残余 SEGV~~（**B9 已清偿**：退出冲刷修复）、B14 紧凑编码（spec v1.3：head 精度档 :full/:px + 默认值省略表进 cmd.tbl——B13 报告准入数据已备）、B15 帧间增量（分层参考帧/周期 checkpoint/效果合成指令族）、B16 资产内容寻址、B 方案写拦截（profiling 触发）、socket 拓扑（15fps 验证档 .frb ~12Mbps）、fr-render --diff、fr-bisect、sim harness、LLM 语义层生成 PoC（B13-dream 构想）、设备端瘦客户端 | 届时随批定 |
+| B7+ | 按数据排队：~~newgame 残余 SEGV~~（**B9 已清偿**：退出冲刷修复）、B14 紧凑编码（spec v1.3：head 精度档 :full/:px + 默认值省略表进 cmd.tbl——B13 报告准入数据已备）、B15 帧间增量（分层参考帧/周期 checkpoint/效果合成指令族）、B16 资产内容寻址、B 方案写拦截（profiling 触发）、socket 拓扑（15fps 验证档 .frb ~12Mbps）、fr-render --diff、fr-bisect、sim harness、dream runner（B18：LLM 直出 canonical FR + runner 会话后勤，设计 plans/2026-10-30-b18-dream-runner-design.md）、设备端瘦客户端 | 届时随批定 |
 
 排序依据：先钉死格式与编解码（B0–B2 是一切判据的地基），再产真流（B3），再上引擎（B4–B5），最后观测深度（B6+）。每批收尾自查：**是否新造了影响别处的耦合**——是则当场做掉。
+
+B7+ 种子指针（各项设计记录位置）：B16 资产内容寻址→roadmap 设计 §2/§4（benchmarks.md 已备立项数据）；B 方案写拦截→gap §四（设计在案，profiling 触发）；socket 拓扑→renderer「流的载体」节；fr-render --diff / fr-bisect→§5 工具族+§7 开放问题；sim harness→B5 `--sim` 已交付（§6 B5 行）；设备端瘦客户端→§7 开放问题+D6；B18 dream runner→decisions.md D14 + plans/2026-10-30-b18-dream-runner-design.md（送审稿已删，git 史 46de3e3 可考）。
 
 ## 7. 开放问题与未来工作
 

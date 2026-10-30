@@ -6,8 +6,8 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 
 - `docs/design.md` — **总纲入口**：系统全貌、一帧的一生、机制卡、工具族地图、实施路线——新会话从这里进，再按其 §0 读者地图跳真源
 - `docs/fr-rationale.md` — **动机总纲**：FR 为 Agent 图形化验证而设计的推理链、五条设计原则、Agent 工作流、MCP 工具预留接口面
-- `docs/fr-spec.md` — FR 规格 v1.2（封版）：段语义、级别三档、命令集、事件词汇表、工具族、取证清单
-- `docs/decisions.md` — 架构决策 D1–D13：LLVM 模式总则、语义四准则、验证两律、树不进协议、语境纪律、LÖVE 定位、魔改宿主架构（D8）、sango 剥离（D9）、GPU 边界（D10）、相机归属（D11）、捕获面全 API 三分类与回放侧三机制（D12）、环境层家族 v1 透明放行（D13）
+- `docs/fr-spec.md` — FR 规格（现行 v1.4，以 §13 版本记录为准）：段语义、级别三档、命令集、事件词汇表、工具族、取证清单
+- `docs/decisions.md` — 架构决策 D1–D14：LLVM 模式总则、语义四准则、验证两律、树不进协议、语境纪律、LÖVE 定位、魔改宿主架构（D8）、sango 剥离（D9）、GPU 边界（D10）、相机归属（D11）、捕获面全 API 三分类与回放侧三机制（D12）、环境层家族 v1 透明放行（D13）、流是唯一持久化物+ev 双生产者+dream 直出（D14）
 - `docs/love2d-gap.md` — 魔改设计与差距分析 v2：六个挂点、绘制层（引擎内 C 回放 + 捕获后回放）、事件层（C 捕获/注入 + 自有 run loop）、log（API 边界记录，debug 栈钩仅审计）
 - `docs/benchmarks.md` — **性能基准线**（录制吞吐/流体积/观测规模，持续优化锚——优化落地必更新对照行）
 - `tables/cmd.tbl` — 命令表 = 单一真源；两端编解码代码从它生成，**不许手写编解码**
@@ -20,6 +20,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - 内核与渲染端的唯一通道是 FR 流，内核不得读渲染端状态（D8 生效，取代 D6，见 docs/decisions.md）
 - 工具命名不与现成 shell 命令撞语义
 - 修改规格 = 改 `docs/fr-spec.md` + 在其 §13 版本记录追加一行；决策修订 = 在 `docs/decisions.md` 追加新条目注明取代关系
+- 讨论收尾三步走：决策结论 → decisions.md 追加条目；批次设计/讨论沉淀 → docs/plans/ 文档；总纲 design.md 同步正文与指针——**不允许结论只存在于会话记录**
 
 ## Setup commands
 
@@ -34,11 +35,10 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]` / `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
 - C 工具链：本机 `D:/Lab/_tools/mingw64`（x86_64，主力）与 `D:/Lab/_tools/mingw32`（i686——**2026-10-27 起编译子进程损坏**：连 hello.c 都静默 exit 1，待重置；跨架构对账暂依赖 gyl）——均为 GCC 14.2.0，无 PATH——根 conftest.py 自动注入（mingw64 优先）；另有 MSVC BuildTools 2022（cl 19.44，x86 根下）与 LLVM 21.1.5（`D:/Lab/_tools/LLVM`，clang/lld-link/lldb）——B4 fork 的 MSVC 官方构建路线零安装可行（docs/build-probe.md）
-- 测试：`pytest tests/`（101 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit+解码自测/L0 headless/fork 捕获与 tee₁/真字节物化/离线回放 d_crc/无头拓扑 C/事件捕获与 sim 重演/堆 s_crc 与 st 物理行/d_crc 与 str 敏感 s_crc/B8 状态类+绘制五 op+rt/scissor/Shader 边界+api-parade 闭环/B9 代理方法族+去重+形态/B10 C 侧 tee 对拍）
+- 测试：`pytest tests/`（117 项：解析/量化/编解码/会话封装/CLI/round-trip/零漂移与跨目标锚/C emit+解码自测/L0 headless/fork 捕获与 tee₁/真字节物化/离线回放 d_crc/无头拓扑 C/事件捕获与 sim 重演/堆 s_crc 与 st 物理行/d_crc 与 str 敏感 s_crc/B8 状态类+绘制五 op+rt/scissor/Shader 边界+api-parade 闭环/B9 代理方法族+去重+形态/B10 C 侧 tee 对拍/B13 fr-stats 剖面/B14 :px 档编解码与 fr-prec 转换/B15 增量词汇与 fr_delta_check 对拍）
 - 事件注入回放（B5）：`python tools/fr_render.py --sim <in.fr>`——严格档内核重演（录制 ev 事件注入队列重新驱动内核，再生 out 行与录制逐帧比对）；demo 注入参数 `--inject-click <x>,<y> --inject-key <key>`（帧 1/2）
 - 发布包（B7a）：`dist/fr-capture-demo.zip`——fork 运行时+VC143 CRT+捕获 rig demo（含 golden），解压即跑（README 有命令）
 - 堆状态观测（B6）：s_crc 常开（注册状态根子图 CRC——demo 侧 `_frStateRoot(kernel.state)`）；st 物理行 FR_LOGLEVEL=full 按需（影子镜像 diff，数组 `[i]`/hash `"key"`，表重建走 err 载体）；sim 比对集含 st/s_crc
-- 事件注入回放（B5）：`python tools/fr_render.py --sim <in.fr>`——严格档内核重演（录制 ev 事件注入队列重新驱动内核，再生 out 行与录制逐帧比对）；demo 注入参数 `--inject-click <x>,<y> --inject-key <key>`（帧 1/2）
 - 离线回放（B4 阶段三）：`python tools/fr_render.py <in.fr|in.frb>`——拓扑 B 离线回放驱动（fork love.exe 的 --offline-replay 模式），输出逐帧 D_CRC 与采样像素；无头录制（拓扑 C）：fork demo 加 `FR_HEADLESS=1`（t.window=false，tee 与有窗逐字节一致）
 
 ## Project layout
