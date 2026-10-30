@@ -126,3 +126,19 @@ def test_fr_assets_golden(tmp_path):
     assert man["assets"][0]["kind"] == "image" and man["assets"][0]["w"] == 32
     rows = (kit / "assets.txt").read_text(encoding="utf-8").splitlines()
     assert rows[0].startswith("asset image 1 ") and rows[1].startswith("asset font 2 ")
+
+
+# ---------------- T4：提示词工程 ----------------
+
+def test_prompt_assembly_and_window():
+    from dream import prompt as dp
+    vocab = dp.load_vocab()
+    assert "frame N" in vocab and "clear" in vocab
+    catalog = dp.load_catalog("dream")  # 无 kit 时内建最小目录单（1 font）
+    p = dp.build_prompt(vocab, catalog, window_text="frame 0\nclear 0 0 0 255",
+                        directive="英雄从左走到右", next_frame=1)
+    for part in (vocab, catalog, "frame 0", "英雄从左走到右", "frame 1"):
+        assert part in p
+    # 滑窗：取流文本最后 k 个 frame 块
+    stream = "frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
+    assert dp.sliding_window(stream, 2) == "frame 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"

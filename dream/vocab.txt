@@ -1,0 +1,29 @@
+# dream/vocab.txt —— LLM 书写 FR 的词汇速查（canonical :full 档；真源 tables/cmd.tbl）
+会话几何与资产目录单由系统消息给出；你只写 frame 块。规则：
+1. 每块以 `frame N` 开头（N 从上一帧 +1 连续递增）；
+2. 块内先 st 行（世界账本，可省）后绘制行；只写内容行——
+   dt/asset/ev/s_crc/d_crc 由 runner 书写，出现即拒绝；
+3. f32 一律 %.6f 六位小数定长（如 12.500000）；rgba = 四个 0-255 整数；
+4. 资产只引用目录单里的 id，不得发明不存在的号（fr-lint L001 拦截）。
+
+st 行：`st 0 "<键>" num <f32>` 或 `str "<文本>"` —— 例：st 0 "hero.x" num 128.000000
+
+绘制行（mode: 0=填充 1=描边；arctype: 0=pie 1=open 2=closed）：
+  clear <r> <g> <b> <a>
+  draw <tex资产号> 0 <x> <y> <rot> <sx> <sy> <ox> <oy> <r> <g> <b> <a>
+  print <font资产号> "<文本>" <x> <y> <rot> <sx> <sy> <r> <g> <b> <a>
+  rect <mode> <x> <y> <w> <h> <rx> <ry> <width> <r> <g> <b> <a>
+  line <x1> <y1> <x2> <y2> [...] <width> <r> <g> <b> <a>
+  poly <mode> <x1> <y1> <x2> <y2> [...] <r> <g> <b> <a>
+  circle <mode> <x> <y> <r> <seg> <r> <g> <b> <a>
+  arc <mode> <arctype> <x> <y> <r> <a1> <a2> <seg> <r> <g> <b> <a>
+  points <x1> <y1> <x2> <y2> [...] <size> <r> <g> <b> <a>
+  rt <目标canvas资产号|0=屏幕>
+  scissor <x> <y> <w> <h>
+
+示例帧（几何 640x480）：
+frame 7
+st 0 "hero.x" num 132.000000
+clear 0 0 0 255
+draw 1 0 132.000000 240.000000 0.000000 1.000000 1.000000 0.000000 0.000000 255 255 255 255
+print 2 "HP 87" 12.000000 12.000000 0.000000 1.000000 1.000000 255 255 0 255
