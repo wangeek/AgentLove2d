@@ -8,6 +8,11 @@
 
 st 行：`st 0 "<键>" num <f32>` 或 `str "<文本>"` —— 例：st 0 "hero.x" num 128.000000
 
+5. 行序=深度：后写的行盖住先写的。绘制顺序固定：clear 最先 → 背景 rect 其次 →
+   人物/物件 draw 再次 → 文字 print 最后。每帧必须完成所有这些元素（创作量下限）。
+6. 运动=每帧重算坐标：抛物线 y=h-4t(T-t)、圆周 x=cx+r*cos(a) y=cy+r*sin(a)、
+   帧动画=按 frame N 奇偶交替换图。三角函数值自己算成 %.6f 写死进行里。
+
 绘制行（mode: 0=填充 1=描边；arctype: 0=pie 1=open 2=closed）：
   clear <r> <g> <b> <a>
   draw <tex资产号> 0 <x> <y> <rot> <sx> <sy> <ox> <oy> <r> <g> <b> <a>

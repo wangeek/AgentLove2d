@@ -62,6 +62,8 @@ def main(argv=None):
     vocab = dprompt.load_vocab()
     catalog = dprompt.load_catalog(a.kit)
     frames, stream_text, retry, feedback = [], "", 0, ""
+    import time
+    chunk_times = []
     while len(frames) < a.frames:
         directive = a.directive
         if a.chunk_frames > 0:
@@ -72,7 +74,13 @@ def main(argv=None):
                                       dprompt.sliding_window(stream_text, a.window_k),
                                       directive, len(frames))
         try:
-            chunk_frames = dsession.parse_chunk(drv.generate(prompt))
+            t0 = time.perf_counter()
+            raw = drv.generate(prompt)
+            chunk_frames = dsession.parse_chunk(raw)
+            dt_chunk = time.perf_counter() - t0
+            chunk_times.append(dt_chunk)
+            print("dream.run: chunk %d → %d 帧，%.1fs" %
+                  (len(chunk_times), len(chunk_frames), dt_chunk), file=sys.stderr)
             if chunk_frames[0][0] != len(frames):
                 raise ValueError("chunk 起始帧号 %d ≠ 期望 %d"
                                  % (chunk_frames[0][0], len(frames)))
@@ -107,8 +115,10 @@ def main(argv=None):
     diags = fr_lint.lint_text(text, dream=True)
     for d in diags:
         print("lint:", d, file=sys.stderr)
-    print("dream.run: %d 帧 → %s（lint %s）" % (len(frames), a.out,
-          "全绿" if not diags else "%d 条诊断" % len(diags)))
+    print("dream.run: %d 帧 → %s（lint %s；chunk 均时 %.1fs）"
+          % (len(frames), a.out,
+             "全绿" if not diags else "%d 条诊断" % len(diags),
+             (sum(chunk_times) / len(chunk_times)) if chunk_times else 0.0))
     return 0 if not diags else 1
 
 
