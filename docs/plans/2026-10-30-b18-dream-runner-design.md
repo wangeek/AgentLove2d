@@ -73,7 +73,9 @@ CLI：`python -m dream.run --frames N --out <path> --kit <dir> [--from-file <f> 
 
 1. **语法层**：行格式/参数域/定长小数/帧号连续；
 2. **语义层**：资产引用完整性（幻资产号拦截）/帧配对/end 配对——M1 新增的 lint 缺口；
-3. **锚定回放层**：fr-render 逐帧 d_crc 终审。
+3. **锚定回放层**：fr-render 终审——rc=0、帧数出齐、**双跑画布 D_CRC 逐帧一致**
+   （注意口径：回放 stdout D_CRC=画布像素 CRC，fr_capture.cpp:2658；流内 d_crc=out
+   行文本 CRC，B7a——两个域不可互比）。
 
 不合格 chunk 带**编译器式诊断**（行号+错误码+修复提示）打回 LLM 自修复，重试上限；
 超限该 chunk 作废、会话照常闭合（err 忠实记录，不静默吞）。NaN/Inf 防线沿用 rows() 先例。
@@ -82,7 +84,7 @@ CLI：`python -m dream.run --frames N --out <path> --kit <dir> [--from-file <f> 
 
 - 单流 ≥60 帧（分块生成），**fr-check 全绿 + fr-as/fr-dis round-trip 逐字节相等**
   （dream 流过最高纪律回归）；
-- fr-render 离线回放 rc=0、逐帧 D_CRC 对账；FR_PLAY 播出连贯小动画（人眼 + PIXEL
+- fr-render 离线回放 rc=0、60 帧画布 D_CRC 出齐且双跑逐帧一致（同 B10 稳定口径）；FR_PLAY 播出连贯小动画（人眼 + PIXEL
   采样锚）；
 - lint 语义层零漏报（幻资产号/坏帧全被拦）；
 - kit 从 newgame 流借 ≥8 资产；

@@ -164,3 +164,61 @@ def test_driver_llm_requires_env(monkeypatch):
     monkeypatch.delenv("LLM_MODEL", raising=False)
     with pytest.raises(RuntimeError):
         driver.LlmDriver()  # 未配置即构造期明确报错，不静默
+
+
+# ---------------- T6：run CLI 端到端（60 帧 from-file 全链） ----------------
+
+def _gen_chunk_file(path, n_frames):
+    """确定性 60 帧剧本：hero.x 每帧 +4，清屏+方块+顶栏；分 6 段 chunk。"""
+    parts = []
+    for i in range(n_frames):
+        x = 40.0 + 4.0 * i
+        parts.append("frame %d\nst 0 \"hero.x\" num %.6f\nclear 20 24 36 255\n"
+                     "rect 0 %.6f 240.000000 48.000000 48.000000 0.000000 0.000000 1.000000 255 255 255 255\n"
+                     "rect 0 0.000000 0.000000 640.000000 24.000000 0.000000 0.000000 1.000000 90 90 120 255\n"
+                     % (i, x, x))
+    chunks = ["\n".join(parts[j * 10:(j + 1) * 10]) for j in range(6)]
+    with open(path, "w", newline="\n", encoding="utf-8") as f:
+        f.write("\n### CHUNK\n".join(chunks) + "\n")
+
+
+def test_end_to_end_from_file(tmp_path):
+    import subprocess
+    from tools import fr_lint
+    src = tmp_path / "chunks.txt"
+    _gen_chunk_file(str(src), 60)
+    out = tmp_path / "dream.fr"
+    r = subprocess.run(
+        ["python", "-m", "dream.run", "--frames", "60", "--out", str(out),
+         "--from-file", str(src), "--seed", "1"], capture_output=True, cwd=_ROOT)
+    assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+    text = out.read_text(encoding="utf-8")
+    assert text.count("\nframe ") == 60
+    # ① fr-lint 全绿（dream 口径）
+    assert fr_lint.lint_text(text, dream=True) == []
+    # ② fr-check（含 canonical 幂等 + sha 对账）
+    r = subprocess.run(["python", "tools/fr_check.py", str(out), "--strict"],
+                       capture_output=True, cwd=_ROOT)
+    assert r.returncode == 0, r.stdout.decode("utf-8", "replace")
+    # ③ fr-as/fr-dis round-trip 逐字节相等
+    frb = tmp_path / "dream.frb"
+    back = tmp_path / "back.fr"
+    subprocess.run(["python", "tools/fr_as.py", str(out), "-o", str(frb)],
+                   check=True, capture_output=True, cwd=_ROOT)
+    subprocess.run(["python", "tools/fr_dis.py", str(frb), "-o", str(back)],
+                   check=True, capture_output=True, cwd=_ROOT)
+    assert back.read_bytes() == out.read_bytes()
+    # ④ render 对账（fork 构建在场时；不在场跳过——CI 与无构建机不红）
+    #    口径注意：回放 stdout D_CRC = 画布像素 CRC（fr_capture.cpp:2658，B4 验证锚），
+    #    与流内 d_crc（B7a out 行文本 CRC）是两个域，不可互比——判据为：
+    #    rc=0 + 60 帧出齐 + 双跑逐帧一致（确定性锚，B10 同口径）。
+    love = os.path.join(_ROOT, "megasource", "build115", "love", "Release", "love.exe")
+    if os.path.isfile(love):
+        from tools import fr_render
+        cp = fr_render.render(str(out), timeout=120)
+        assert cp.returncode == 0, cp.stderr.decode("utf-8", "replace")
+        got = [l for l in cp.stdout.decode().split("\n") if l.startswith("D_CRC ")]
+        assert len(got) == 60
+        cp2 = fr_render.render(str(out), timeout=120)
+        got2 = [l for l in cp2.stdout.decode().split("\n") if l.startswith("D_CRC ")]
+        assert got == got2  # 双跑逐帧一致（画布确定性）
