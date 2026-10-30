@@ -142,3 +142,25 @@ def test_prompt_assembly_and_window():
     # 滑窗：取流文本最后 k 个 frame 块
     stream = "frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
     assert dp.sliding_window(stream, 2) == "frame 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
+
+
+# ---------------- T5：driver（FromFile 确定性 + LLM env） ----------------
+
+def test_driver_from_file(tmp_path):
+    from dream import driver
+    f = tmp_path / "chunks.txt"
+    f.write_text("frame 0\nclear 0 0 0 255\n### CHUNK\nframe 1\nclear 0 0 0 255\n",
+                 encoding="utf-8")
+    d = driver.FromFileDriver(str(f))
+    assert "frame 0" in d.generate("prompt-ignored")
+    assert "frame 1" in d.generate("prompt-ignored")
+    with pytest.raises(RuntimeError):
+        d.generate("exhausted")
+
+
+def test_driver_llm_requires_env(monkeypatch):
+    from dream import driver
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    with pytest.raises(RuntimeError):
+        driver.LlmDriver()  # 未配置即构造期明确报错，不静默
