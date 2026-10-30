@@ -63,3 +63,51 @@ def test_seal_and_roundtrip(tmp_path):
     p = tmp_path / "d.fr"
     ds.write_session(s, str(p))
     assert p.read_text(encoding="utf-8") == text
+
+
+# ---------------- T2：fr-lint 语法+语义层 ----------------
+
+def _tiny_stream(asset_rows=("asset font 1 14.000000 00010203",), out_rows=("clear 0 0 0 255",)):
+    from dream import session as ds
+    frames = ds.parse_chunk("frame 0\nst 0 \"t\" num 1.000000\n" + "\n".join(out_rows))
+    entries = ds.seal_frames(frames, kit_rows=[fc.parse_line(a) for a in asset_rows], dt=0.066667)
+    return fr_session.dump_text(ds.build_session(entries, seed=1))
+
+
+def test_lint_clean_on_valid_stream():
+    from tools import fr_lint
+    assert fr_lint.lint_text(_tiny_stream()) == []
+
+
+def test_lint_phantom_asset():
+    from tools import fr_lint
+    # draw 引用不存在的资产 7（kit 只有 font 1）
+    text = _tiny_stream(out_rows=("clear 0 0 0 255",
+        "draw 7 0 10.000000 20.000000 0.000000 1.000000 1.000000 0.000000 0.000000 255 255 255 255"))
+    diags = fr_lint.lint_text(text)
+    assert any(d.startswith("L001") and "7" in d for d in diags)
+
+
+def test_lint_bad_d_crc():
+    from tools import fr_lint
+    text = _tiny_stream()
+    lines = text.split("\n")
+    for i, l in enumerate(lines):
+        if l.startswith("d_crc "):
+            lines[i] = "d_crc 123456789"
+            break
+    diags = fr_lint.lint_text("\n".join(lines))
+    assert any(d.startswith("L002") for d in diags)
+
+
+def test_lint_frame_order():
+    from tools import fr_lint
+    # dt 不在帧首（手工拼一条坏流：帧首塞 clear 再 dt）
+    from dream import session as ds
+    frames = ds.parse_chunk("frame 0\nclear 0 0 0 255")
+    entries = ds.seal_frames(frames, kit_rows=[], dt=0.066667)
+    block = entries[0][1]
+    block[0], block[1] = block[1], block[0]  # 破坏行序
+    text = fr_session.dump_text(ds.build_session(entries, seed=1))
+    diags = fr_lint.lint_text(text)
+    assert any(d.startswith("L004") for d in diags)
