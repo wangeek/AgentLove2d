@@ -1,0 +1,31 @@
+{
+ "assets": [
+  {
+   "id": 1,
+   "kind": "image",
+   "w": 32,
+   "h": 32,
+   "src": "demonic.png"
+  },
+  {
+   "id": 2,
+   "kind": "image",
+   "w": 32,
+   "h": 32,
+   "src": "heterodox.png"
+  },
+  {
+   "id": 3,
+   "kind": "image",
+   "w": 32,
+   "h": 32,
+   "src": "orthodox.png"
+  },
+  {
+   "id": 4,
+   "kind": "font",
+   "size": "14.000000",
+   "src": "NiuPix.ttf"
+  }
+ ]
+}

@@ -136,6 +136,31 @@ def test_fr_assets_golden(tmp_path):
     assert rows[0].startswith("asset image 1 ") and rows[1].startswith("asset font 2 ")
 
 
+def test_fr_assets_from_files(tmp_path):
+    """从原始文件建 kit：PNG 头解析 w/h、字节原样登记（spec v1.2.6 路径资产口径）。"""
+    import struct
+    from tools import fr_assets
+    # 手造最小合法 PNG（1x1 白）：签名 + IHDR + IDAT + IEND
+    def chunk(typ, data):
+        c = struct.pack(">I", len(data)) + typ + data
+        return c + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+    ihdr = struct.pack(">IIBBBBB", 3, 2, 8, 2, 0, 0, 0)  # 3x2 RGB
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+           + chunk(b"IDAT", b"\x00\x00") + chunk(b"IEND", b""))
+    p = tmp_path / "tiny.png"
+    p.write_bytes(png)
+    f = tmp_path / "fake.ttf"
+    f.write_bytes(b"\x00\x01\x00\x00FONT")
+    kit = tmp_path / "kit"
+    n = fr_assets.build_from_files(str(kit), [(str(p), "image"), (str(f), "font")])
+    assert n == 2
+    man = (kit / "assets.json").read_text(encoding="utf-8")
+    assert '"w": 3' in man and '"h": 2' in man
+    rows = (kit / "assets.txt").read_text(encoding="utf-8").splitlines()
+    assert rows[0].startswith("asset image 1 3 2 89504e47")  # PNG 魔数在 hex 头
+    assert rows[1].startswith("asset font 2 14.000000 00010000")
+
+
 # ---------------- T4：提示词工程 ----------------
 
 def test_prompt_assembly_and_window():

@@ -1,6 +1,9 @@
-# B18 dream：剑侠 kit 字节体（16MB hex）不入库——由 newgame 流按需再生：
-#   bash docs/plans/2026-10-30-b18-dream-runner.md T7 命令（fr_assets 抽取）
-# 本目录 assets.json（目录单）入库供人审/LLM 引用面预览。
+# B18 dream：kit 字节体（assets.txt 的 hex 段）不入库——按需再生：
+#   流抽取：python tools/fr_assets.py <in.fr> -o dream/kit_jianxia
+#   文件建：python tools/fr_assets.py --from-files dream/kit_heroes <png...> <ttf>
+# 各目录 assets.json（目录单）入库供人审/LLM 引用面预览。
 dream/kit_jianxia/assets.txt
-# M1 验收产物（Qwen3.8 60 帧流，15.7MB）——磁盘保留不入库
+dream/kit_heroes/assets.txt
+# 验收产物（Qwen3.8 生成流）——磁盘保留不入库
 dream/dream_llm.fr
+dream/dream_heroes.fr
