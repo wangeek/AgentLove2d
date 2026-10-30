@@ -134,9 +134,9 @@ def test_px_roundtrip_byte_equal():
     # 构造 px 形态行（parse_line_px 支持）后 dump 保形
     px_stream = (_MINI_FULL.replace(" base 7", " base 7 :px")
                  .replace("draw 1 0 10.000000 20.000000 0.000000 1.000000 1.000000 0.000000 0.000000 255 255 255 255",
-                          "D 1 0 10 20 0.000000 1.000000 1.000000")
+                          "D 1 0 10 20 0 1 1")
                  .replace("rect 0 5.000000 6.000000 7.000000 8.000000 0.000000 0.000000 1.000000 255 0 0 255",
-                          "R 0 5 6 7 8 0 0 1.000000 255 0 0 255"))
+                          "R 0 5 6 7 8 0 0 1 255 0 0 255"))
     assert fs.dump_text(fs.parse_text(px_stream)) == px_stream
 
 
@@ -152,8 +152,8 @@ def test_fr_prec_convert(tmp_path):
     text = open(out, encoding="utf-8").read()
     lines = text.splitlines()
     assert lines[0].endswith(":px")
-    assert "D 1 0 10 20 0.000000 1.000000 1.000000" in lines  # 短名+量化+省略尾
-    assert "R 0 5 6 7 8 0 0 1.000000 255 0 0 255" in lines
+    assert "D 1 0 10 20 0 1 1" in lines  # 短名+量化+省略尾
+    assert "R 0 5 6 7 8 0 0 1 255 0 0 255" in lines
     assert "dt 0.016667" in lines and "s_crc 111" in lines    # 段行透传
     assert not any(l.startswith("d_crc 222") for l in lines)  # 旧 d_crc 替换
     # d_crc 独立重算对账（自检+独立重算范式）

@@ -111,7 +111,7 @@ def test_px_render_omit_and_quantize():
     """:px 渲染：短名 D、坐标整数量化、尾部默认省略（color=white/oy/ox）。"""
     f = {"tex": 7, "quad": 0, "x": 100.0, "y": 200.0, "rot": 0.0, "sx": 1.0,
          "sy": 1.0, "ox": 0.0, "oy": 0.0, "color": (255, 255, 255, 255)}
-    assert fc.render_line_px("draw", f) == "D 7 0 100 200 0.000000 1.000000 1.000000"
+    assert fc.render_line_px("draw", f) == "D 7 0 100 200 0 1 1"
 
 
 def test_px_parse_roundtrip_equiv():
@@ -127,7 +127,7 @@ def test_px_rect_and_passthrough():
     f4 = {"mode": 0, "x": 50.0, "y": 150.5, "w": 200.0, "h": 200.0,
           "rx": 0.0, "ry": 0.0, "width": 1.0, "color": (255, 0, 255, 255)}
     px = fc.render_line_px("rect", f4)
-    assert px == "R 0 50 150.500000 200 200 0 0 1.000000 255 0 255 255", px
+    assert px == "R 0 50 150.500000 200 200 0 0 1 255 0 255 255", px
     _, g4 = fc.parse_line_px(px)
     assert g4["y"] == 150.5 and tuple(g4["color"]) == (255, 0, 255, 255)
     assert fc.render_line_px("rt", {"target": 3}) == "rt 3"
@@ -150,9 +150,9 @@ def test_delta_rows_roundtrip():
 
 def test_delta_rdp_embeds_px_line():
     """rdp 内嵌 :px 行（递归 token——line 是带引号 str，含空格不撕行）。"""
-    fields = {"pos": 4, "line": "D 7 0 100 200 0.000000 1.000000 1.000000"}
+    fields = {"pos": 4, "line": "D 7 0 100 200 0 1 1"}
     line = fc.render_line("rdp", fields)
-    assert line == 'rdp 4 "D 7 0 100 200 0.000000 1.000000 1.000000"', line
+    assert line == 'rdp 4 "D 7 0 100 200 0 1 1"', line
     got_op, got = fc.parse_line(line)
     assert got_op == "rdp" and got == fields
 

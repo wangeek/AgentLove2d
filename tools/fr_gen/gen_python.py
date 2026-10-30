@@ -568,7 +568,9 @@ def parse_line(line):
 # 省略=尾部连续命中默认（位置参数约束：中段不省；链遇非默认字段即断）。
 # B13 实测准入：draw 的 color=white/oy=0/ox=0（sx/sy 出局——battle 命中
 # 0.00，链在 sy 前截断）；rect/print 的 color 无稳定默认 → 本批不省。
-# 量化=坐标/尺寸字段值整时 %.0f（SVG path 数字风格），非整保留 %.6f。
+# 量化=值整即整（任意 f32/f64 字段——坐标/尺寸/rot/sx/sy/width 一律，值整写
+# %.0f（SVG path 数字风格），非整保留 %.6f。2026-10-30 值整则整修正：
+# 原字段名白名单漏 rot/sx/sy/width，dream 实测 0.000000/1.000000 尾巴即此）。
 
 _PX_SHORT = {"clear": "C", "draw": "D", "print": "PR", "rect": "R",
              "line": "LN", "circle": "CI", "poly": "PY", "arc": "AR",
@@ -578,8 +580,6 @@ _PX_SHORT_BY = {v: k for k, v in _PX_SHORT.items()}
 _PX_OMIT = {
     "draw": [("color", (255, 255, 255, 255)), ("oy", 0.0), ("ox", 0.0)],
 }
-
-_PX_WHOLE = {"x", "y", "w", "h", "ox", "oy", "r", "a1", "a2", "rx", "ry"}
 
 _WHITE = (255, 255, 255, 255)
 
@@ -597,7 +597,7 @@ def _px_is_default(name, typ, v, dflt):
 
 def _px_f32(name, v):
     f = qf(v)
-    if name in _PX_WHOLE and f == int(f):
+    if f == int(f):
         return "%d" % int(f)
     return "%.6f" % f
 
