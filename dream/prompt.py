@@ -35,7 +35,11 @@ def load_catalog(kit_dir):
 
 
 def sliding_window(stream_text, k):
-    """canonical 流文本 → 最后 k 个 frame 块原文（含 frame 头行）。"""
+    """canonical 流文本 → 最后 k 个 frame 块原文（含 frame 头行）。
+
+    asset 行（hex 字节体）**过滤掉**——资产引用面已在目录单，字节进窗口会把
+    请求撑爆（实测 3.1MB kit → 第二次请求 400；帧 0 在 K=8 窗内持续污染）。
+    """
     lines = stream_text.split("\n")
     starts = [i for i, l in enumerate(lines) if l.startswith("frame ")]
     if not starts:
@@ -44,7 +48,8 @@ def sliding_window(stream_text, k):
     end = starts[-1]
     while end < len(lines) and lines[end] != "":
         end += 1
-    return "\n".join(lines[starts[0]:end]) + "\n"
+    body = [l for l in lines[starts[0]:end] if not l.startswith("asset ")]
+    return "\n".join(body) + "\n"
 
 
 def build_prompt(vocab, catalog, window_text, directive, next_frame):

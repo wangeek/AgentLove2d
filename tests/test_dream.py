@@ -172,9 +172,12 @@ def test_prompt_assembly_and_window():
                         directive="英雄从左走到右", next_frame=1)
     for part in (vocab, catalog, "frame 0", "英雄从左走到右", "frame 1"):
         assert part in p
-    # 滑窗：取流文本最后 k 个 frame 块
-    stream = "frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
-    assert dp.sliding_window(stream, 2) == "frame 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
+    # 滑窗：取流文本最后 k 个 frame 块；asset hex 行过滤（不进 LLM 窗口）
+    stream = ("frb1 640 480 x full 1\nasset image 1 3 2 " + "ab" * 40 + "\n"
+              "frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n")
+    w = dp.sliding_window(stream, 2)
+    assert w == "frame 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n"
+    assert "asset " not in w and "frame 0" not in w
 
 
 # ---------------- T5：driver（FromFile 确定性 + LLM env） ----------------

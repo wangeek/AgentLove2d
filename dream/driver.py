@@ -46,8 +46,13 @@ class LlmDriver:
             with urllib.request.urlopen(req, timeout=300) as r:
                 data = json.loads(r.read().decode())
         except urllib.error.HTTPError as e:
-            raise RuntimeError("LLM HTTP %s（网关超时/限流——减小 --chunk-frames 重试）"
-                               % e.code) from e
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            raise RuntimeError("LLM HTTP %s（网关超时/限流/请求体拒绝——减小"
+                               " --chunk-frames 重试）body=%s" % (e.code, body)) from e
         except (urllib.error.URLError, OSError) as e:
             raise RuntimeError("LLM 网络错误: %s" % e) from e
         return data["choices"][0]["message"]["content"]
