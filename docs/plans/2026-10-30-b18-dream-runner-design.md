@@ -52,13 +52,13 @@ CLI：`python -m dream.run --frames N --out <path> --kit <dir> [--from-file <f> 
 
 ## 4. LLM 输出契约（职责切分）
 
-- **LLM 写内容行**：每帧 `frame N` + out 绘制行（clear/draw/print/rect/…，canonical
-  全名，`%.6f` 定长）+ **st 自述行**（世界账本——dream 的「内核自述」就是 LLM 自述，
-  L0 golden 同构；分块续写靠窗口内 st 行锚数值连续性）。
-- **runner 写封装行**：session header、asset 行、每帧 dt、end（d_crc/s_crc）——创作归
-  LLM，封装归 runner。
-- 生成形态 = canonical full（自描述、稳）；紧凑存储走 fr_prec 转 :px——**生成形态与
-  存储形态解耦**（工具既有）。
+- **LLM 写内容行**：每帧 `frame N` + out 绘制行（**:px 紧凑档直写**——短名/整数
+  坐标/尾部缺省省略；token 经济修正 2026-10-30：%.6f 高精 float 是生成 token 纯
+  浪费，:px 静态全量帧无跨帧簿记问题，B15 冲突裁决只约束 paramdelta 层）+
+  ~~st 自述行~~（**取消**：px codec 不支持 variant 解析——codec 约束顺势落定语义：
+  px 生成档无 st，连续性归滑窗 out 行，D14「状态即流历史」的彻底形态）。
+  **frame/dt/end/asset 行由 runner 写**——创作归 LLM，封装归 runner，资产只引用不碰字节。
+- 生成形态 = :px 直写；要 :full 观感走 fr_prec 反向展开（值落档内无损）。
 - end 段口径：d_crc = 当帧 out 行文本 CRC32（常规口径，fr-render 回放重算对账）；
   s_crc = dream 口径 = 当帧 st 行文本 CRC32（dream 无内核，与录制流「注册状态根子图
   CRC」语义不同——如实注明，回放不依赖它）。

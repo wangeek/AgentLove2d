@@ -23,11 +23,16 @@ def _crc(rows):
     return zlib.crc32("\n".join(rows).encode("utf-8")) & 0xFFFFFFFF
 
 
-# out 段 op 前缀（其余前缀属 head/in/log/end 段——d_crc 口径=纯 out 行）
+# out 段 op 前缀（含 :px 短名——C/D/PR/R/LN/PY/CI/AR/PT/SC；其余前缀属
+# head/in/log/end 段——d_crc 口径=纯 out 行）
 _OUT_PREFIXES = ("clear ", "draw ", "print ", "rect ", "line ", "poly ",
-                 "circle ", "arc ", "points ", "rt ", "scissor ")
+                 "circle ", "arc ", "points ", "rt ", "scissor ",
+                 "C ", "D ", "PR ", "R ", "LN ", "PY ", "CI ", "AR ", "PT ",
+                 "SC ")
 _OTHER_PREFIXES = ("dt ", "asset ", "ev ", "call ", "timer ", "rngc ",
                    "st ", "err ", "s_crc ", "d_crc ")
+# 引用行前缀（长名+短名；t[1] 都是资产号）
+_REF_PREFIXES = ("draw ", "D ", "print ", "PR ")
 
 
 def lint_text(text, dream=False):
@@ -57,7 +62,7 @@ def lint_text(text, dream=False):
                     diags.add("L004 帧%d: asset 行仅允许首帧" % fidx)
                 t = l.split(" ")
                 declared.add(int(t[2]))
-            elif l.startswith(("draw ", "print ")):
+            elif l.startswith(_REF_PREFIXES):
                 t = l.split(" ")
                 ref = int(t[1])
                 if ref not in declared and ref not in seen_assets:

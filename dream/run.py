@@ -24,12 +24,12 @@ from tools import fr_lint
 
 
 def load_kit_rows(kit_dir):
-    """kit assets.txt → [(op, fields)]（原样回放进首帧）。"""
+    """kit assets.txt → [("asset", parsed_fields)]（parse 形态，px 渲染器可画回）。"""
     p = os.path.join(kit_dir, "assets.txt")
     if not os.path.isfile(p):
         return []
     with open(p, encoding="utf-8") as f:
-        return [_rc.parse_line(l) for l in f.read().splitlines() if l.strip()]
+        return [("asset", _rc.parse_line(l)[1]) for l in f.read().splitlines() if l.strip()]
 
 
 def _semantic_guard(text):
