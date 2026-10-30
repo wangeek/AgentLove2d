@@ -111,3 +111,18 @@ def test_lint_frame_order():
     text = fr_session.dump_text(ds.build_session(entries, seed=1))
     diags = fr_lint.lint_text(text)
     assert any(d.startswith("L004") for d in diags)
+
+
+# ---------------- T3：fr-assets kit 抽取 ----------------
+
+def test_fr_assets_golden(tmp_path):
+    from tools import fr_assets
+    kit = tmp_path / "kit"
+    n = fr_assets.extract("tests/golden/l0_session.fr", str(kit))
+    assert n == 2  # golden: image 1 + font 2
+    import json
+    man = json.loads((kit / "assets.json").read_text(encoding="utf-8"))
+    assert [a["id"] for a in man["assets"]] == [1, 2]
+    assert man["assets"][0]["kind"] == "image" and man["assets"][0]["w"] == 32
+    rows = (kit / "assets.txt").read_text(encoding="utf-8").splitlines()
+    assert rows[0].startswith("asset image 1 ") and rows[1].startswith("asset font 2 ")
