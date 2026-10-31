@@ -7,7 +7,7 @@ from tools import fr_codec_gen as fc
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROWS = tbl.parse(open(os.path.join(_ROOT, "tables", "cmd.tbl"), encoding="utf-8").read())
-BASE_SHA = "1bd74035c2e8e25e4a6ab54bbb32c8ff59bfc3b16e21cf5b84c6d0094ec11292"
+BASE_SHA = "24bf782b90ff2d1c0cf1ca17aa1ba220de415aed15ede54612b427cb4717ac60"
 
 def test_ops_match_table():
     assert fc.TBL_SHA256 == tbl.tbl_sha256(ROWS) == BASE_SHA
@@ -40,7 +40,7 @@ def test_quantized_float_layout():
 def test_every_op_roundtrips():
     samples = fc.self_test_samples()
     ops_with_sample = {op for op, _ in samples}
-    # B15：ext 扩展行型（S/pd/rdp/rdm）不进 selftest（C emit 不产增量，
+    # B15/v1.5：ext 扩展行型（Tier1/Tier2）不进 selftest（C emit 不产增量，
     # 先例=font 引用形态）；round-trip 归专项测试 + 真流实测。
     base_ops = {r["op"] for r in ROWS if r["status"] != "ext"}
     assert ops_with_sample == base_ops  # 基座全覆盖
@@ -138,9 +138,9 @@ def test_px_rect_and_passthrough():
 def test_delta_rows_roundtrip():
     """扩展行型 render/parse round-trip（基座样本豁免的补充覆盖）。"""
     cases = [
-        ("S", {"ref": 3}, "S 3"),
-        ("pd", {"asset": 7, "k": 2, "param": "x", "val": 102.0}, "pd 7 2 x 102.000000"),
-        ("rdm", {"pos": 5}, "rdm 5"),
+        ("CP", {"ref": 3}, "CP 3"),
+        ("SET", {"asset": 7, "k": 2, "param": "x", "val": 102.0}, "SET 7 2 x 102.000000"),
+        ("DEL", {"pos": 5}, "DEL 5"),
     ]
     for op, fields, line in cases:
         assert fc.render_line(op, fields) == line, (op, fields)
@@ -149,16 +149,16 @@ def test_delta_rows_roundtrip():
 
 
 def test_delta_rdp_embeds_px_line():
-    """rdp 内嵌 :px 行（递归 token——line 是带引号 str，含空格不撕行）。"""
+    """INS 内嵌 :px 行（递归 token——line 是带引号 str，含空格不撕行）。"""
     fields = {"pos": 4, "line": "D 7 0 100 200 0 1 1"}
-    line = fc.render_line("rdp", fields)
-    assert line == 'rdp 4 "D 7 0 100 200 0 1 1"', line
+    line = fc.render_line("INS", fields)
+    assert line == 'INS 4 "D 7 0 100 200 0 1 1"', line
     got_op, got = fc.parse_line(line)
-    assert got_op == "rdp" and got == fields
+    assert got_op == "INS" and got == fields
 
 
 def test_delta_pd_param_whitelist():
-    """pd param 白名单（x/y/rot/sx/sy/ox/oy）外的参数拒收。"""
+    """SET param 白名单（x/y/rot/sx/sy/ox/oy）外的参数拒收。"""
     import pytest as _pytest
     with _pytest.raises(ValueError, match="param"):
-        fc.parse_line("pd 7 2 bogus 1.000000")
+        fc.parse_line("SET 7 2 bogus 1.000000")

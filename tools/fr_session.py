@@ -98,9 +98,12 @@ def parse_text(text):
             if cur is None:
                 raise SessionError("第 %d 行：行必须位于 frame 块内" % no)
             try:
-                # B15：增量行（S/pd/rdp/rdm）原样保留 raw-line（Session 增
-                # "raw" 键——展开器消费；rdp 嵌套引号 print 行不做 token 化）。
-                if line.startswith(("S ", "pd ", "rdp ", "rdm ")):
+                # B15 增量行（v1.5 改名：S/pd/rdp/rdm → CP/SET/INS/DEL，旧名
+                # 退役——遇旧名走 parse_line_px 报"未知 op"明确失败）原样
+                # 保留 raw-line（Session 增 "raw" 键——展开器消费；INS 嵌套
+                # 引号 print 行不做 token 化）。Tier2（MOVE/PLACE/POSE/ENTER/
+                # EXIT）不进 canonical——dream seal 侧降级为 Tier1 后落流。
+                if line.startswith(("CP ", "SET ", "INS ", "DEL ")):
                     cur.append((line.split(" ")[0], {"raw": line}))
                 else:
                     # B14：按档分派（:px 流行=短名/省略形，parse_line_px 回填默认

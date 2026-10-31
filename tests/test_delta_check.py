@@ -23,12 +23,12 @@ def _mini():
         "D 1 0 10 20 0.000000 1.000000 1.000000\n"
         "R 0 5 6 7 8 0 0 1.000000 255 0 0 255\n"
         "frame 1\ndt 0.016667\n"
-        "S 0\n"
+        "CP 0\n"
         "frame 2\ndt 0.016667\n"
-        "S 0\n"
-        "pd 1 0 x 42\n"
-        'rdp 2 "R 0 1 2 3 4 0 0 1.000000 0 255 0 255"\n'
-        "rdm 1\n"
+        "CP 0\n"
+        "SET 1 0 x 42\n"
+        'INS 2 "R 0 1 2 3 4 0 0 1.000000 0 255 0 255"\n'
+        "DEL 1\n"
     )
 
 
@@ -45,7 +45,7 @@ def test_delta_check_expand(tmp_path):
 
     # 帧数 3；无增量行残留
     assert text.count("frame ") == 3
-    assert not any(ln.startswith(("S ", "pd ", "rdp ", "rdm ")) for ln in text.splitlines())
+    assert not any(ln.startswith(("CP ", "SET ", "INS ", "DEL ")) for ln in text.splitlines())
 
 
 def test_delta_check_pd_overlay():
@@ -57,13 +57,13 @@ def test_delta_check_pd_overlay():
         "D 1 0 10 20 0.000000 1.000000 1.000000\n"
         "R 0 5 6 7 8 0 0 1.000000 255 0 0 255\n"
         "frame 1\ndt 0.016667\n"
-        "S 0\n"
+        "CP 0\n"
         "frame 2\ndt 0.016667\n"
-        "S 0\n"
-        "rdm 1\n"
-        'rdp 1 "D 1 0 42 20 0.000000 1.000000 1.000000"\n'
-        'rdp 2 "R 0 1 2 3 4 0 0 1.000000 0 255 0 255"\n'
-        "pd 1 0 x 42\n"
+        "CP 0\n"
+        "DEL 1\n"
+        'INS 1 "D 1 0 42 20 0.000000 1.000000 1.000000"\n'
+        'INS 2 "R 0 1 2 3 4 0 0 1.000000 0 255 0 255"\n'
+        "SET 1 0 x 42\n"
     )
     r = fdc.expand_delta(mini)
     f2 = r["_rows"][2]
@@ -87,9 +87,9 @@ def test_delta_check_pd_disambiguation():
         "D 7 0 100 200 0.000000 1.000000 1.000000\n"
         "D 7 0 300 200 0.000000 1.000000 1.000000\n"
         "frame 1\ndt 0.016667\n"
-        "pd 7 1 x 555\n"
+        "SET 7 1 x 555\n"
         "frame 2\ndt 0.016667\n"
-        "pd 7 0 x 111\n"
+        "SET 7 0 x 111\n"
     )
     r = fdc.expand_delta(text)
     assert r["warnings"] == []
@@ -100,7 +100,7 @@ def test_delta_check_pd_disambiguation():
     f2 = r["_rows"][2]
     assert f2[0].split()[3] == "111.000000" and f2[1].split()[3] == "555.000000"
     # k 越界 → 报告、不抛
-    r2 = fdc.expand_delta(text.replace("pd 7 0 x 111", "pd 7 5 x 111"))
+    r2 = fdc.expand_delta(text.replace("SET 7 0 x 111", "SET 7 5 x 111"))
     assert any("身份未配对" in w for w in r2["warnings"])
 
 

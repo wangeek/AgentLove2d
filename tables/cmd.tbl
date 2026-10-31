@@ -51,7 +51,12 @@ rt	out	target u32	love.graphics.setCanvas（:2933）	sealed	0=屏幕，否则 ca
 scissor	out	x f32 y f32 w f32 h f32	love.graphics.setScissor（:3002）	sealed	裁剪做参数；判据锚行注意哨兵语义；哨兵=off 表示关闭裁剪 freq=7。短名 SC
 s_crc	end	crc u32	方案A 同次堆遍历产出（帧=事务/present=commit）	sealed	级别不进校验和；B6 物理形态=注册状态根子图 CRC（D8 裁定）；B3b 样机已退役
 d_crc	end	crc u32	out 记录 CRC32	sealed	全量无增量；B7a 已兑现（录制侧当帧 out 行 CRC，end 段双行）
-S	out	ref u32	frame-delta 扩展集（B15）	ext	same：本帧行集与帧 ref 全同（dt/ev 段行独立）；d_crc=CRC("same:<ref>")；能力协商=head :prec 复合 +d；链深上限 I 帧兜底
-pd	out	asset u32 k u32 param str val f32	frame-delta 扩展集（B15）	ext	paramdelta：(asset,k) 行身份（React key 模型，帧内引用序消歧）单参数绝对值更新（幂等优先）；param 白名单 x/y/rot/sx/sy/ox/oy；身份配对失败编码器降级 rd（路线图 §5.3-7）
-rdp	out	pos u32 line str	frame-delta 扩展集（B15）	ext	行插入：pos=帧内行序（构造性定位，非跨帧身份——身份纪律仅管 pd 配对）；line=完整 :px 行（递归解析）
-rdm	out	pos u32	frame-delta 扩展集（B15）	ext	行删除：pos=帧内行序（同 rdp 定位口径）
+CP	out	ref u32	frame-delta Tier1（v1.5 定稿；编辑器动词风）	ext	copy：本帧行集=帧 ref 行集（dt/ev 段行独立）；**ref 可省=上一帧**（解析层缺省回填）；d_crc=CRC("same:<ref>")（锚声明；字面量 same: 不随改名变——历史流兼容）；head +d 能力协商；链深上限 I 帧兜底。【v1.5 改名：S→CP】
+SET	out	asset u32 k u32 param str val f32	frame-delta Tier1（v1.5 定稿）	ext	set：(asset,k) 行身份（React key 帧内引用序消歧）单参数**绝对值**更新（幂等优先）；**k 可省=0**；param 白名单 x/y/rot/sx/sy/ox/oy；身份配对失败编码器降级 INS+DEL 同位。【v1.5 改名：pd→SET】
+INS	out	pos u32 line str	frame-delta Tier1（v1.5 定稿）	ext	insert：帧内行序 pos 插入（pos=应用时刻行序，构造性定位）；**pos 可省=行尾（最上层）**；line=完整 :px 行（递归解析，嵌套引号转义）。【v1.5 改名：rdp→INS】
+DEL	out	pos u32	frame-delta Tier1（v1.5 定稿）	ext	delete：删除帧内行序 pos 的行（构造性定位，非身份寻址——身份删除走 Tier2 EXIT）。【v1.5 改名：rdm→DEL】
+MOVE	out	asset u32 k u32 dx f32 dy f32	dream Tier2（v1.5；舞台动词风——对象编辑集，LLM 生成侧融合语义）	ext	相对位移（"往哪挪多少"——消除查旧值+心算往返）；(asset,k) 对象寻址，k 可省=0；帧内完整、frame0 禁用（需基线）；dream seal 侧确定性降级=SET x/y 两行；C 直通归后续批次
+PLACE	out	asset u32 k u32 x f32 y f32	dream Tier2（v1.5）	ext	绝对置位（"放在哪"——布位/传送思维，与 MOVE 为 abs/rel 对偶）；降级=SET x/y 两行
+POSE	out	asset u32 k u32 line str	dream Tier2（v1.5）	ext	整行替换（换贴图/姿势/quad/颜色——参数集外的一切形态变化）；**身份随行内容走**（次帧按新行内 asset 寻址）；降级=DEL+INS 同位
+ENTER	out	line str	dream Tier2（v1.5）	ext	新对象入场（行尾插入=最上层；无寻址——新对象没有"第几个"）；降级=INS 裸形
+EXIT	out	asset u32 k u32	dream Tier2（v1.5）	ext	对象离场（身份寻址删除——数同类实例远比数全帧行便宜）；k 可省=0；降级=DEL（seal 侧解析行号）；莎剧舞台指示词汇域（Enter/Exit 正典）

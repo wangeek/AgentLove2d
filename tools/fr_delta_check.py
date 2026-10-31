@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tools.fr_session as fs
 
-_DELTA_OPS = ("S", "pd", "rdp", "rdm")
+_DELTA_OPS = ("CP", "SET", "INS", "DEL")
 _OUT_OPS = ("clear", "draw", "print", "rect", "line", "circle",
             "poly", "arc", "points", "rt", "scissor")
 _PX_SHORT = {"C": "clear", "D": "draw", "PR": "print", "R": "rect",
@@ -63,23 +63,23 @@ def expand_delta(text):
         state = list(base)
         for d in deltas:
             t = d.split(" ", 1)[0]
-            if t == "S":
+            if t == "CP":
                 ref = int(d.split()[1])
                 if ref >= len(frames):
-                    reports.append("S ref 越界: %s" % d)
+                    reports.append("CP ref 越界: %s" % d)
                     continue
                 state = list(frames[ref])
-            elif t == "rdp":
+            elif t == "INS":
                 pos = int(d.split()[1])
                 line = d[d.index('"') + 1:d.rindex('"')]
                 state.insert(pos, _denorm(line)) if pos <= len(state) else state.append(line)
-            elif t == "rdm":
+            elif t == "DEL":
                 pos = int(d.split()[1])
                 if pos < len(state):
                     del state[pos]
                 else:
-                    reports.append("rdm 越界: %s" % d)
-            elif t == "pd":
+                    reports.append("DEL 越界: %s" % d)
+            elif t == "SET":
                 _, asset, k, param, val = d.split()
                 asset, k, val = int(asset), int(k), float(val)
                 seen = 0
@@ -95,7 +95,7 @@ def expand_delta(text):
                             break
                         seen += 1
                 if not matched:
-                    reports.append("pd 身份未配对: %s" % d)
+                    reports.append("SET 身份未配对: %s" % d)
         frames.append(state)
     out = {"frames": len(frames), "warnings": reports}
     out["_rows"] = frames

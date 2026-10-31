@@ -6,8 +6,13 @@ import os, subprocess, sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _run(script, *args):
-    return subprocess.run([sys.executable, os.path.join(_ROOT, "tools", script), *args],
-                          capture_output=True, text=True, cwd=_ROOT)
+    # 错误消息含中文（UTF-8 输出）——text 模式默认 GBK 在本机会解码炸
+    #（stderr 变 None）。显式 bytes 捕获 + utf-8/replace 解码（B1 字节纪律）。
+    r = subprocess.run([sys.executable, os.path.join(_ROOT, "tools", script), *args],
+                       capture_output=True, cwd=_ROOT)
+    return subprocess.CompletedProcess(r.args, r.returncode,
+                                       r.stdout.decode("utf-8", "replace"),
+                                       r.stderr.decode("utf-8", "replace"))
 
 def _sample_fr():
     # 测试进程由 python -m pytest 从仓库根启动，tools 包可直接 import

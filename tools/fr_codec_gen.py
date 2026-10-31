@@ -5,7 +5,7 @@ import struct
 
 from tools.fr_gen.quantize import qf
 
-TBL_SHA256 = "1bd74035c2e8e25e4a6ab54bbb32c8ff59bfc3b16e21cf5b84c6d0094ec11292"
+TBL_SHA256 = "24bf782b90ff2d1c0cf1ca17aa1ba220de415aed15ede54612b427cb4717ac60"
 
 OPS = [
     {"op": "dt", "section": "head", "opcode": 0, "fields": [("val", "f32")], "variadic": None},
@@ -29,10 +29,15 @@ OPS = [
     {"op": "scissor", "section": "out", "opcode": 18, "fields": [("x", "f32"), ("y", "f32"), ("w", "f32"), ("h", "f32")], "variadic": None},
     {"op": "s_crc", "section": "end", "opcode": 19, "fields": [("crc", "u32")], "variadic": None},
     {"op": "d_crc", "section": "end", "opcode": 20, "fields": [("crc", "u32")], "variadic": None},
-    {"op": "S", "section": "out", "opcode": 21, "fields": [("ref", "u32")], "variadic": None},
-    {"op": "pd", "section": "out", "opcode": 22, "fields": [("asset", "u32"), ("k", "u32"), ("param", "str"), ("val", "f32")], "variadic": None},
-    {"op": "rdp", "section": "out", "opcode": 23, "fields": [("pos", "u32"), ("line", "str")], "variadic": None},
-    {"op": "rdm", "section": "out", "opcode": 24, "fields": [("pos", "u32")], "variadic": None}
+    {"op": "CP", "section": "out", "opcode": 21, "fields": [("ref", "u32")], "variadic": None},
+    {"op": "SET", "section": "out", "opcode": 22, "fields": [("asset", "u32"), ("k", "u32"), ("param", "str"), ("val", "f32")], "variadic": None},
+    {"op": "INS", "section": "out", "opcode": 23, "fields": [("pos", "u32"), ("line", "str")], "variadic": None},
+    {"op": "DEL", "section": "out", "opcode": 24, "fields": [("pos", "u32")], "variadic": None},
+    {"op": "MOVE", "section": "out", "opcode": 25, "fields": [("asset", "u32"), ("k", "u32"), ("dx", "f32"), ("dy", "f32")], "variadic": None},
+    {"op": "PLACE", "section": "out", "opcode": 26, "fields": [("asset", "u32"), ("k", "u32"), ("x", "f32"), ("y", "f32")], "variadic": None},
+    {"op": "POSE", "section": "out", "opcode": 27, "fields": [("asset", "u32"), ("k", "u32"), ("line", "str")], "variadic": None},
+    {"op": "ENTER", "section": "out", "opcode": 28, "fields": [("line", "str")], "variadic": None},
+    {"op": "EXIT", "section": "out", "opcode": 29, "fields": [("asset", "u32"), ("k", "u32")], "variadic": None}
 ]
 
 _BY_OP = {d["op"]: d for d in OPS}
@@ -406,12 +411,13 @@ def render_line(op, fields):
         raise ValueError("未知 op: %r" % op) from None
     if op == "asset" or spec["variadic"] == "payload...":
         return " ".join(_render_asset(fields))
-    # B15 增量行型特化：pd 的 param=裸受控 token（白名单），val 恒 %.6f 绝对值
-    if op == "pd":
+    # B15 增量行型特化：SET 的 param=裸受控 token（白名单），val 恒 %.6f 绝对值
+    # （v1.5 改名 pd→SET；缺省形只存在于 dream chunk 层，canonical 恒显式）
+    if op == "SET":
         if fields["param"] not in ("x", "y", "rot", "sx", "sy", "ox", "oy"):
-            raise ValueError("pd param 非法: %r" % fields["param"])
-        return "pd %d %d %s %.6f" % (fields["asset"], fields["k"],
-                                     fields["param"], qf(fields["val"]))
+            raise ValueError("SET param 非法: %r" % fields["param"])
+        return "SET %d %d %s %.6f" % (fields["asset"], fields["k"],
+                                      fields["param"], qf(fields["val"]))
     toks = [op]
     for name, typ in spec["fields"]:
         toks.extend(_render_tok(typ, fields[name]))
@@ -506,12 +512,12 @@ def parse_line(line):
         spec = _BY_OP[op]
     except KeyError:
         raise ValueError("未知 op: %r" % op) from None
-    # B15 增量行型特化：pd param=裸受控 token（白名单校验）
-    if op == "pd":
+    # B15 增量行型特化：SET param=裸受控 token（白名单校验；v1.5 pd→SET）
+    if op == "SET":
         if len(toks) != 5:
-            raise ValueError("pd 行 token 数须为 5: %r" % toks)
+            raise ValueError("SET 行 token 数须为 5: %r" % toks)
         if toks[3] not in ("x", "y", "rot", "sx", "sy", "ox", "oy"):
-            raise ValueError("pd param 非法: %r" % toks[3])
+            raise ValueError("SET param 非法: %r" % toks[3])
         return op, {"asset": int(toks[1]), "k": int(toks[2]),
                     "param": toks[3], "val": qf(float(toks[4]))}
     pos = 1
