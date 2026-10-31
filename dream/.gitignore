@@ -2,7 +2,8 @@
 #   流抽取：python tools/fr_assets.py <in.fr> -o dream/kit_jianxia
 #   文件建：python tools/fr_assets.py --from-files dream/kit_heroes <png...> <ttf>
 # 各目录 assets.json（目录单）入库供人审/LLM 引用面预览。
-dream/kit_jianxia/assets.txt
-dream/kit_heroes/assets.txt
-# 验收产物（Qwen3.8 生成流）——磁盘保留不入库
-dream/dream_*.fr
+# （本 .gitignore 位于 dream/ 内，模式相对本目录，勿再带 dream/ 前缀）
+kit_jianxia/assets.txt
+kit_heroes/assets.txt
+# 验收产物（LLM 生成流）——磁盘保留不入库
+dream_*.fr
