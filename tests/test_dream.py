@@ -143,6 +143,31 @@ def test_parse_chunk_clear_in_delta_frame():
             'frame 1\nC 0 0 0 255\nR 0 0 0 10 10 0 0 1 0 0 0 255\nMOVE 1 4 0\n')
 
 
+def test_ev_seal_order_and_roundtrip():
+    """M2 第一步：--ev 事件行落帧 in 段（dt 后、asset/out 前）+ 流文本 round-trip。"""
+    from dream import session as ds
+    from dream import run as drun
+    from tools import fr_session as fs
+
+    fno, etype, eargs = drun._parse_ev("1:mousepressed 320 240")
+    assert (fno, etype, eargs) == (1, "mousepressed", [320.0, 240.0])
+    frames = ds.parse_chunk('frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\n')
+    canon, expanded, dcrcs = ds.resolve_frames(frames)
+    ev = ("ev", {"slot": 0, "type": "mousepressed", "src": 0,
+                 "args": [320.0, 240.0]})
+    entries = ds.seal_frames(canon, kit_rows=[], dt=0.066667, dcrcs=dcrcs,
+                             ev_by_frame={1: [ev]})
+    blk = [e for e in entries if e[0] == "frame"][1][1]
+    assert [op for op, _ in blk[:3]] == ["dt", "ev", "clear"]  # in 段行序
+    text = fs.dump_text(ds.build_session(entries, seed=1))
+    assert 'ev 0 "mousepressed" 0 2 num 320.000000 num 240.000000' in text
+    # round-trip：parse 回来 ev 字段等价
+    s2 = fs.parse_text(text)
+    blk2 = [e for e in s2["entries"] if e[0] == "frame"][1][1]
+    ev2 = [r for r in blk2 if r[0] == "ev"][0]
+    assert ev2[1]["type"] == "mousepressed" and ev2[1]["args"] == [320.0, 240.0]
+
+
 def test_resolve_tier2_downgrade():
     """Tier2 → Tier1 确定性降级 + 三口径 d_crc + 展开态正确性。"""
     from dream import session as ds

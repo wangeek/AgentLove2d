@@ -302,11 +302,14 @@ def resolve_frames(frames):
     return canon, expanded, dcrcs
 
 
-def seal_frames(canon_frames, kit_rows, dt, dcrcs):
-    """canonical frames → Session entries。行序：dt → asset(仅首帧) → 行集 → end。"""
+def seal_frames(canon_frames, kit_rows, dt, dcrcs, ev_by_frame=None):
+    """canonical frames → Session entries。行序：dt → ev（M2：事件帧 in 段）→
+    asset(仅首帧) → 行集 → end。"""
     entries, first = [], True
     for (_no, rows), d in zip(canon_frames, dcrcs):
         block = [("dt", {"val": dt})]
+        for evf in (ev_by_frame or {}).get(_no, []):
+            block.append(evf)  # ("ev", {slot,type,src,args})——M2 打断事实
         if first:
             block += list(kit_rows)
             first = False

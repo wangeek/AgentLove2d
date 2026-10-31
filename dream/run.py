@@ -45,6 +45,15 @@ def _chatlog_sanitize(text):
     return text
 
 
+def _parse_ev(spec):
+    """--ev "10:mousepressed 320 240" → (帧号, type, args 裸数列表)。"""
+    head, _, rest = spec.partition(":")
+    toks = rest.split()
+    if not toks:
+        raise ValueError("--ev 缺 type: %r" % spec)
+    return int(head), toks[0], [float(t) for t in toks[1:]]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dream.run")
     ap.add_argument("--frames", type=int, required=True)
@@ -62,6 +71,9 @@ def main(argv=None):
                     help="每次生成请求的帧数上限（0=不限；网关超时建议 10）")
     ap.add_argument("--chatlog", default="",
                     help="LLM 会话日志路径（缺省 <out>.chatlog；只记每次追加的提示词与回应）")
+    ap.add_argument("--ev", action="append", default=[], metavar='"<帧号>:<type> <args...>"',
+                    help='脚本化事件（可多次）：如 --ev "10:mousepressed 320 240"'
+                         '——ev 行入流该帧 in 段 + 注入提示词，LLM 续写须响应（M2 第一步）')
     a = ap.parse_args(argv)
     if bool(a.from_file) == a.llm:
         print("dream.run: --from-file 与 --llm 二选一", file=sys.stderr)
@@ -78,6 +90,12 @@ def main(argv=None):
     frames, stream_text, retry, feedback = [], "", 0, ""
     import time
     chunk_times = []
+    # M2 第一步：脚本化 ev——帧号 → [("ev", fields)]（seal 落 in 段）+ 注入提示词
+    pending = {}
+    for spec in a.ev:
+        fno, etype, eargs = _parse_ev(spec)
+        pending.setdefault(fno, []).append(
+            ("ev", {"slot": 0, "type": etype, "src": 0, "args": eargs}))
     # 会话日志：只记每次追加的 user（剧本前缀首回合后折叠）与 assistant 原文
     # ——append-only 下请求会重发全史，日志按增量记，避免重复与冗长
     log_path = a.chatlog or (a.out + ".chatlog")
@@ -99,8 +117,18 @@ def main(argv=None):
         base = len(messages)
         turn_seq += 1
         if a.llm:
+            ev_note = ""
+            hit = [f for f in pending
+                   if len(frames) <= f < len(frames) + n_left]
+            if hit:
+                ev_note = "\n【用户事件】" + "；".join(
+                    "frame %d：%s(%s)——流中已记录该事件，此帧照常书写，"
+                    "下一帧起让画面对此做出明确可见的视觉响应"
+                    % (f, pending[f][0][1]["type"],
+                       ", ".join(str(int(v)) for v in pending[f][0][1]["args"]))
+                    for f in sorted(hit))
             messages.append({"role": "user", "content": dprompt.build_turn(
-                a.directive, len(frames), n_left, feedback)})
+                a.directive, len(frames), n_left, feedback) + ev_note})
             shown = messages[base]["content"]
             if turn_seq > 1 and shown.startswith(a.directive):
                 shown = "<剧本同前，略>" + shown[len(a.directive):]
@@ -144,7 +172,8 @@ def main(argv=None):
         # 展开降级（Tier2→Tier1）→ seal → 语义闸 → 通过才计入流
         try:
             canon, expanded, dcrcs = dsession.resolve_frames(frames)
-            entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs)
+            entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs,
+                                           ev_by_frame=pending)
             has_same = any(op in dsession.TIER1 for _n, rows in canon
                            for op, _ in rows)
             probe = dsession.write_session(
@@ -174,7 +203,8 @@ def main(argv=None):
         retry, feedback = 0, ""
     frames = frames[:a.frames]
     canon, expanded, dcrcs = dsession.resolve_frames(frames)
-    entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs)
+    entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs,
+                                   ev_by_frame=pending)
     has_same = any(op in dsession.TIER1 for _n, rows in canon for op, _ in rows)
     text = dsession.write_session(
         dsession.build_session(entries, seed=a.seed, width=a.width,
