@@ -87,6 +87,11 @@ def main(argv=None):
             if chunk_frames[0][0] != len(frames):
                 raise ValueError("chunk 起始帧号 %d ≠ 期望 %d"
                                  % (chunk_frames[0][0], len(frames)))
+            if a.llm and len(chunk_frames) < n_left:
+                # 帧数不足打回：短输出进 assistant 历史会成为"少写也行"的
+                # 自我示范（心跳 v2 实证：逐帧单写滑坡 28 request/36 帧）
+                raise ValueError("要求 %d 帧实得 %d 帧——请按要求的帧数一次写全"
+                                 % (n_left, len(chunk_frames)))
             frames += chunk_frames
         except (ValueError, RuntimeError) as e:
             del messages[base:]  # 回滚本轮 user(+assistant)——前缀保持已验状态

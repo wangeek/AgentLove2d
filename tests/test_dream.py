@@ -95,6 +95,34 @@ def test_parse_chunk_malformed_pts_valueerror():
             ds.parse_chunk(chunk)
 
 
+def test_run_rejects_short_chunk(monkeypatch, tmp_path):
+    """LLM 模式下 chunk 帧数不足 → 打回重试（feedback 点名），补足后通过。"""
+    from dream import run as drun
+    from dream import driver as ddrv
+
+    calls = {"n": 0}
+
+    class Fake(ddrv.LlmDriver):
+        def __init__(self):
+            self.base, self.key, self.model = "b", "", "m"
+            self.usage_totals = {}
+
+        def generate(self, messages):
+            calls["n"] += 1
+            last_user = messages[-1]["content"]
+            if calls["n"] == 1:
+                # 要求 2 帧只给 1 帧——须被打回
+                return "frame 0\nC 0 0 0 255\n"
+            assert "实得 1 帧" in last_user  # feedback 点名帧数不足
+            return "frame 0\nC 0 0 0 255\nframe 1\nC 0 0 0 255\n"
+
+    monkeypatch.setattr(drun.ddrv, "LlmDriver", Fake)
+    out = tmp_path / "o.fr"
+    rc = drun.main(["--frames", "2", "--out", str(out), "--llm",
+                    "--chunk-frames", "2", "--kit", "dream"])
+    assert rc == 0 and calls["n"] == 2
+
+
 def test_resolve_tier2_downgrade():
     """Tier2 → Tier1 确定性降级 + 三口径 d_crc + 展开态正确性。"""
     from dream import session as ds
