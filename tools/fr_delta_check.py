@@ -85,11 +85,16 @@ def expand_delta(text):
                 seen = 0
                 matched = False
                 for i, r in enumerate(state):
-                    tt = r.split()
-                    # :px 行（短名 D/draw 全名两形态）——资产 token 位同（位 1）
-                    if tt[0] in ("draw", "D") and int(tt[1]) == asset:
+                    full = _denorm(r)
+                    tt = full.split()
+                    # denorm 后全名行（短名 D→draw；省略形 token 序=全名序）
+                    if tt[0] == "draw" and int(tt[1]) == asset:
                         if seen == k:
-                            tt[_param_pos(param)] = "%.6f" % val
+                            # 改写位缺 token 时按 draw 默认补齐（:px 省略形）
+                            pos = _param_pos(param)
+                            while len(tt) <= pos:
+                                tt.append("0")
+                            tt[pos] = "%.6f" % val
                             state[i] = " ".join(tt)
                             matched = True
                             break
