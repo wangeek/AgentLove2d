@@ -12,13 +12,19 @@
   D <tex资产号> 0 <x> <y> <rot> <sx> <sy>          ← 色默认白、ox/oy 默认 0 时可省略尾三参
   PR <font资产号> "<文本>" <x> <y> <rot> <sx> <sy> <r> <g> <b> <a>
   R <mode> <x> <y> <w> <h> <rx> <ry> <width> <r> <g> <b> <a>
-  LN <x1> <y1> <x2> <y2> [...] <width> <r> <g> <b> <a>
-  PY <mode> <x1> <y1> <x2> <y2> [...] <r> <g> <b> <a>
+  LN <点数N> <x1> <y1> ... <xN> <yN> <width> <r> <g> <b> <a>
+  PY <mode> <点数N> <x1> <y1> ... <xN> <yN> <r> <g> <b> <a>
   CI <mode> <x> <y> <r> <seg> <r> <g> <b> <a>
   AR <mode> <arctype> <x> <y> <r> <a1> <a2> <seg> <r> <g> <b> <a>
-  PT <x1> <y1> <x2> <y2> [...] <size> <r> <g> <b> <a>
+  PT <点数N> <x1> <y1> ... <xN> <yN> <size> <r> <g> <b> <a>
   rt <目标canvas资产号|0=屏幕>
   SC <x> <y> <w> <h>
+
+变长行铁律（LN/PY/PT）：**op 后第 2 个 token 必须是点数 N**（LN/PT）或 mode 后
+第 1 个 token 是点数 N（PY），后面恰好跟 N 对坐标。写错点数 = 整行被拒。
+  LN 2 100 200 300 400 1 0 120 160 255        ← 2 点线段
+  PY 0 3 100 240 180 160 260 240 100 100 120 255   ← 3 点三角形（0=填充）
+  PT 1 320 240 3 255 255 255 255              ← 1 个点（点数恒写 1）
 
 7. **CP 行（帧复制）**：`CP <ref>` = 本帧行集与帧 ref 完全相同；画面静止时
    写裸 `CP`（=上一帧）。CP 帧独占（帧内只有它）。

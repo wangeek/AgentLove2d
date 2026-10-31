@@ -145,6 +145,7 @@ def parse_chunk(chunk_text):
 
     dream 帧纪律：一帧 = 全量行 | 纯 CP | 编辑行组（Tier1/Tier2 可混组）。
     dt/asset/ev/end/st 行属 runner 或 px 不支持——出现即 ValueError。
+    clear 例外：编辑帧内 C 打底放行且不进行集（画布状态与行集编辑正交）。
     防御纵深：畸形 token 流（点列/颜色分量不足等）统一 IndexError→ValueError，
     runner 打回重试通道只认 ValueError 语义；其余异常照常穿透（真 bug 该炸还炸）。
     """
@@ -176,17 +177,31 @@ def _parse_chunk(chunk_text):
                 raise ValueError("第 %d 行：dream :px 档不写 st" % no)
             if first in TIER1 or first in TIER2:
                 op, fields = _parse_delta_line(no, line, cur[0])
-                if any(o not in TIER1 and o not in TIER2 for o, _ in cur[1]):
-                    raise ValueError("第 %d 行：增量行不得与全量行混帧" % no)
+                if any(o not in TIER1 and o not in TIER2 and o != "clear"
+                       for o, _ in cur[1]):
+                    raise ValueError("第 %d 行：增量行不得与全量行混帧（clear 打底除外）" % no)
                 cur[1].append((op, fields))
             elif first in LLM_OPS or first in _rc._PX_SHORT_BY:
-                if any(o in TIER1 or o in TIER2 for o, _ in cur[1]):
-                    raise ValueError("第 %d 行：全量行不得与增量行混帧" % no)
                 op, fields = _rc.parse_line_px(line)
                 _check_sane_numbers(no, op, fields)
+                if any(o in TIER1 or o in TIER2 for o, _ in cur[1]) and op != "clear":
+                    # clear 例外：清屏是画布状态重置，与行集编辑正交——LLM 从
+                    # 词汇示例学到"C 每帧打底"，编辑帧禁 C 是自相矛盾规则（渔舟
+                    # 用例实证）。先照常收容，帧末统一剔除（此时才知道是编辑帧）。
+                    raise ValueError("第 %d 行：全量行不得与增量行混帧" % no)
                 cur[1].append((op, fields))
             else:
                 raise ValueError("第 %d 行：op %r 不在 dream 内容行白名单" % (no, first))
+        # 帧末统一清：编辑行组帧（含 Tier1/Tier2 且无 CP——CP 帧独占铁律不变）
+        # 剔除 clear 打底行。先收容后判定：C 先于 MOVE 出现时无法预知帧型
+        if cur is not None:
+            kinds = {o for o, _ in cur[1]}
+            if TIER1 & kinds or TIER2 & kinds:
+                if "CP" in kinds and "clear" in kinds:
+                    raise ValueError("第 %d 行：CP 帧独占（clear 打底亦不混）"
+                                     % cur[0])
+                if TIER1 & kinds or TIER2 & kinds:
+                    cur[1][:] = [(o, f) for o, f in cur[1] if o != "clear"]
     if cur is not None:
         frames.append(cur)
     if not frames:

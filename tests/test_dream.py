@@ -123,6 +123,26 @@ def test_run_rejects_short_chunk(monkeypatch, tmp_path):
     assert rc == 0 and calls["n"] == 2
 
 
+def test_parse_chunk_clear_in_delta_frame():
+    """编辑帧内 clear 打底放行且不进行集（渔舟用例实证的词汇自洽修正）。"""
+    from dream import session as ds
+    frames = ds.parse_chunk(
+        'frame 0\nC 0 0 0 255\nD 1 0 100 200 0 1 1\n'
+        'frame 1\nC 0 0 0 255\nMOVE 1 4 0\n')
+    assert [n for n, _ in frames] == [0, 1]
+    # 编辑帧行集只含增量行（clear 被吞），全量帧不受影响
+    assert [op for op, _ in frames[1][1]] == ["MOVE"]
+    # resolve 不因缺 clear 而崩，基线正确（frame 0 全量含 clear，复制进 frame 1）
+    canon, expanded, dcrcs = ds.resolve_frames(frames)
+    assert len(expanded[1]) == 2  # clear + draw（基线继承）
+    # 非 clear 全量行混入编辑帧仍被拒
+    from tools import fr_codec_gen as fc
+    with pytest.raises(ValueError):
+        ds.parse_chunk(
+            'frame 0\nC 0 0 0 255\nD 1 0 100 200 0 1 1\n'
+            'frame 1\nC 0 0 0 255\nR 0 0 0 10 10 0 0 1 0 0 0 255\nMOVE 1 4 0\n')
+
+
 def test_resolve_tier2_downgrade():
     """Tier2 → Tier1 确定性降级 + 三口径 d_crc + 展开态正确性。"""
     from dream import session as ds
