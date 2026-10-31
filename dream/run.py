@@ -96,11 +96,24 @@ def main(argv=None):
                 print("dream.run: 重试上限（%d）：%s" % (a.max_retry, e), file=sys.stderr)
                 return 1
             continue
-        # 增量 seal → 语义闸 → 通过才计入流文本（窗口/最终输出一致）
-        entries, has_same = dsession.seal_frames(frames, kit_rows, a.dt)
-        probe = dsession.write_session(
-            dsession.build_session(entries, seed=a.seed, has_same=has_same),
-            a.out)
+        # 展开降级（Tier2→Tier1）→ seal → 语义闸 → 通过才计入流
+        try:
+            canon, expanded, dcrcs = dsession.resolve_frames(frames)
+            entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs)
+            has_same = any(op in dsession.TIER1 for _n, rows in canon
+                           for op, _ in rows)
+            probe = dsession.write_session(
+                dsession.build_session(entries, seed=a.seed, has_same=has_same),
+                a.out)
+        except ValueError as e:
+            frames = frames[:len(frames) - len(chunk_frames)]
+            del messages[base:]
+            retry += 1
+            feedback = "上次输出被拒（展开失败）：%s" % str(e)[:300]
+            if retry > a.max_retry:
+                print("dream.run: 展开重试上限：%s" % e, file=sys.stderr)
+                return 1
+            continue
         bad = _semantic_guard(probe)
         if bad:
             frames = frames[:len(frames) - len(chunk_frames)]
@@ -115,7 +128,9 @@ def main(argv=None):
         stream_text = probe
         retry, feedback = 0, ""
     frames = frames[:a.frames]
-    entries, has_same = dsession.seal_frames(frames, kit_rows, a.dt)
+    canon, expanded, dcrcs = dsession.resolve_frames(frames)
+    entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs)
+    has_same = any(op in dsession.TIER1 for _n, rows in canon for op, _ in rows)
     text = dsession.write_session(
         dsession.build_session(entries, seed=a.seed, width=a.width,
                                height=a.height, has_same=has_same), a.out)

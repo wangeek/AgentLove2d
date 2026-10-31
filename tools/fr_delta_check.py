@@ -82,6 +82,7 @@ def expand_delta(text):
             elif t == "SET":
                 _, asset, k, param, val = d.split()
                 asset, k, val = int(asset), int(k), float(val)
+                param = param.strip('"')  # LLM 引号习惯宽容
                 seen = 0
                 matched = False
                 for i, r in enumerate(state):
