@@ -122,8 +122,7 @@ def main(argv=None):
                    if len(frames) <= f < len(frames) + n_left]
             if hit:
                 ev_note = "\n【用户事件】" + "；".join(
-                    "frame %d：%s(%s)——流中已记录该事件，此帧照常书写，"
-                    "下一帧起让画面对此做出明确可见的视觉响应"
+                    "frame %d：%s(%s)。世界对它作何反应，由你创作"
                     % (f, pending[f][0][1]["type"],
                        ", ".join(str(int(v)) for v in pending[f][0][1]["args"]))
                     for f in sorted(hit))
