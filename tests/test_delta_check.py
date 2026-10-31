@@ -67,9 +67,41 @@ def test_delta_check_pd_overlay():
     )
     r = fdc.expand_delta(mini)
     f2 = r["_rows"][2]
-    assert any("42" in row for row in f2), f2
-    assert any(row.startswith("rect 0 1 2 3 4") for row in f2), f2
     assert r["warnings"] == []
+    # pd 精确落位（2026-10-31 pd 回检补强：原断言 any("42" in row) 被 rdp
+    # 插入行误满足——pd 写错位（rot）照样绿，潜伏至 dream 回检才暴露）
+    # 帧 2 预期：rdm 删原 D 后 rdp 插新 D（:px 原样形，x=42）→ pd k=0 改其 x 位
+    d_rows = [l for l in f2 if l.split(" ")[0] in ("draw", "D")]
+    # rdp 内嵌行 denorm 短名→全名、token 原样（不回填缺省）；pd k=0 改其 x 位
+    assert d_rows == ["draw 1 0 42.000000 20 0.000000 1.000000 1.000000"], f2
+    assert any(row.startswith("rect 0 1 2 3 4") for row in f2), f2
+
+
+def test_delta_check_pd_disambiguation():
+    """pd (asset,k) 帧内出现序消歧：k=1 改第二实例；k 越界进报告不炸；
+    rdp 改变帧内序后身份按当前序（React key=渲染序）。"""
+    SHA1 = SHA
+    text = (
+        "frb1 640 480 " + SHA1 + " base 1 :px +d\n"
+        "frame 0\ndt 0.016667\n"
+        "D 7 0 100 200 0.000000 1.000000 1.000000\n"
+        "D 7 0 300 200 0.000000 1.000000 1.000000\n"
+        "frame 1\ndt 0.016667\n"
+        "pd 7 1 x 555\n"
+        "frame 2\ndt 0.016667\n"
+        "pd 7 0 x 111\n"
+    )
+    r = fdc.expand_delta(text)
+    assert r["warnings"] == []
+    f1 = r["_rows"][1]
+    t = f1[1].split()
+    assert t[1] == "7" and t[3] == "555.000000", f1  # k=1 → 第二行 x 位
+    assert f1[0].split()[3] == "100.000000"  # 第一行不动
+    f2 = r["_rows"][2]
+    assert f2[0].split()[3] == "111.000000" and f2[1].split()[3] == "555.000000"
+    # k 越界 → 报告、不抛
+    r2 = fdc.expand_delta(text.replace("pd 7 0 x 111", "pd 7 5 x 111"))
+    assert any("身份未配对" in w for w in r2["warnings"])
 
 
 def test_delta_check_c_cross(tmp_path):

@@ -112,7 +112,9 @@ def _param_pos(param):
     # rot=5, sx=6, sy=7, ox=8, oy=9, rgba8=10..13）
     order = ["tex", "quad", "x", "y", "rot", "sx", "sy", "ox", "oy",
              "r", "g", "b", "a"]
-    return order.index(param) + 3  # +3 = draw/tex/quad 前缀
+    # order 已含 tex/quad（token 1/2），只差 draw（token 0）——+1。
+    # 2026-10-31 pd 回检修正：原 +3 把前缀数了两次（x 写进 rot 位）。
+    return order.index(param) + 1  # +1 = draw 前缀
 
 
 def write_expanded(path_out, meta, frames):
