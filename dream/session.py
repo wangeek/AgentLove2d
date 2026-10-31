@@ -9,6 +9,7 @@ token 经济修正（2026-10-30 用户纠偏）：LLM 直接书写 **:px 档**�
 CRC 口径与 l0/main.lua:132-134 同参：d_crc=CRC32(out 行文本 "\\n" 连接)；
 s_crc 恒 0（px 档无 st，哨兵，回放不消费——D14 注）。
 """
+import math
 import os
 import zlib
 
@@ -24,6 +25,32 @@ LLM_OPS = {"clear", "draw", "print", "rect", "line", "poly", "circle",
 LLM_REF_OPS = {"S"}
 # 封装行白名单——出现在 chunk 里即职责越界
 _RUNNER_OPS = {"dt", "asset", "ev", "call", "timer", "rngc", "err", "s_crc", "d_crc"}
+
+# 数值常识域（防小数点/位数幻觉，非坐标域限制——离屏坐标合法，4000→4000000 不合法）
+_ABS_MAX = 1e6
+
+
+def _check_sane_numbers(no, op, fields):
+    """递归查行内全部浮点：nan/inf（异常数）与 |v|>1e6（大数幻觉）即拒。
+
+    只防荒谬量级，不做几何域执法（用户口径：离屏是创作自由，位数错是幻觉）。
+    """
+    stack = [(fields, "")]
+    while stack:
+        obj, path = stack.pop()
+        if isinstance(obj, float):
+            if not math.isfinite(obj):
+                raise ValueError("第 %d 行：%s%s 值 %r 非有限数（nan/inf 异常数）"
+                                 % (no, op, path, obj))
+            if abs(obj) > _ABS_MAX:
+                raise ValueError("第 %d 行：%s%s 值 %r 超常识域 |v|>1e6"
+                                 "（疑似小数点/位数幻觉）" % (no, op, path, obj))
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                stack.append((v, "%s.%s" % (path, k)))
+        elif isinstance(obj, (list, tuple)):
+            for i, v in enumerate(obj):
+                stack.append((v, "%s[%d]" % (path, i)))
 
 
 def table_sha():
@@ -77,6 +104,7 @@ def parse_chunk(chunk_text):
             else:
                 if any(o == "S" for o, _ in cur[1]):
                     raise ValueError("第 %d 行：S 行之后不得再写内容行" % no)
+                _check_sane_numbers(no, op, fields)
                 cur[1].append((op, fields))
     if cur is not None:
         frames.append(cur)

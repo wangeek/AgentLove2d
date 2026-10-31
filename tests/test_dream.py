@@ -59,6 +59,23 @@ def test_parse_chunk_s_rows():
             ds.parse_chunk(bad)
 
 
+def test_parse_chunk_number_sanity():
+    """大数/异常数防线：防小数点与位数幻觉；离屏大坐标（<1e6）不拦。"""
+    from dream import session as ds
+    # 合法：离屏负坐标/大但不荒谬（创作自由，非坐标域执法）
+    ds.parse_chunk("frame 0\nD 1 0 -200 240 0 1 1\n"
+                   "frame 1\nD 1 0 99999 240 0 1 1\n")
+    # 非法：大数（位数/小数点幻觉）
+    for bad in ("D 1 0 4000000 240 0 1 1",        # 400→4000000 级
+                "R 0 0 0 64000000.5 480 0 0 1 34 139 34 255"):
+        with pytest.raises(ValueError, match="幻觉|常识域"):
+            ds.parse_chunk("frame 0\n%s\n" % bad)
+    # 非法：异常数（nan/inf——codec 解析层先拒（B12 防线），dream 层双保险）
+    for bad in ("D 1 0 nan 240 0 1 1", "D 1 0 inf 240 0 1 1"):
+        with pytest.raises(ValueError, match="NaN|Inf|非有限数"):
+            ds.parse_chunk("frame 0\n%s\n" % bad)
+
+
 def test_parse_chunk_tolerates_markdown_fences():
     from dream import session as ds
     chunk = ('```\nframe 0\nclear 0 0 0 255\n```\n'
