@@ -43,6 +43,22 @@ def test_parse_chunk_rejects_runner_rows():
             ds.parse_chunk(chunk)
 
 
+def test_parse_chunk_s_rows():
+    """S 行：合法（独占帧+ref<本帧）；非法（引用未写帧/与内容行混帧）。"""
+    from dream import session as ds
+    ok = ('frame 0\nC 0 0 0 255\n'
+          'frame 1\nS 0\n'
+          'frame 2\nS 1\n')  # 链式合法
+    frames = ds.parse_chunk(ok)
+    assert [n for n, _ in frames] == [0, 1, 2]
+    assert frames[1][1] == [("S", {"ref": 0})]
+    for bad in ('frame 1\nS 1\n',            # 引用自身（未写帧）
+                'frame 0\nC 0 0 0 255\nframe 1\nS 5\n',  # 引用未来帧
+                'frame 0\nC 0 0 0 255\nframe 1\nS 0\nC 0 0 0 255\n'):  # 不独占
+        with pytest.raises(ValueError):
+            ds.parse_chunk(bad)
+
+
 def test_parse_chunk_tolerates_markdown_fences():
     from dream import session as ds
     chunk = ('```\nframe 0\nclear 0 0 0 255\n```\n'
@@ -54,26 +70,30 @@ def test_parse_chunk_tolerates_markdown_fences():
 def test_seal_and_roundtrip(tmp_path):
     from dream import session as ds
     frames = ds.parse_chunk(
-        'frame 0\nC 0 0 0 255\nR 0 0 0 640 480 0 0 1 255 0 0 255\n')
+        'frame 0\nC 0 0 0 255\nR 0 0 0 640 480 0 0 1 255 0 0 255\n'
+        'frame 1\nS 0\n')
     kit_rows = [("asset", fc.parse_line("asset font 1 14.000000 00010203")[1])]
-    entries = ds.seal_frames(frames, kit_rows=kit_rows, dt=0.066667)
-    # d_crc 口径：out 行 :px 渲染文本 "\n" 连接的 zlib crc32（与 seal 同源渲染器）
+    entries, has_same = ds.seal_frames(frames, kit_rows=kit_rows, dt=0.066667)
+    assert has_same
+    # d_crc 口径：out 行 :px 渲染文本 "\n" 连接；S 帧=锚声明 CRC("same:<ref>")
     out_txt = [fc.render_line_px(op, f) for op, f in frames[0][1]]
     expect_d = zlib.crc32("\n".join(out_txt).encode()) & 0xFFFFFFFF
     block = entries[0][1]
     d_row = [f for op, f in block if op == "d_crc"][0]
     assert d_row["crc"] == expect_d
+    s_block = entries[1][1]
+    s_d = [f for op, f in s_block if op == "d_crc"][0]
+    assert s_d["crc"] == zlib.crc32(b"same:0") & 0xFFFFFFFF
     # 行序：dt → asset → out → end 双行（px 无 st，s_crc=0 哨兵）
     assert block[0][0] == "dt"
     assert block[1][0] == "asset"
     assert [op for op, _ in block[-2:]] == ["s_crc", "d_crc"]
-    s_row = [f for op, f in block if op == "s_crc"][0]
-    assert s_row["crc"] == 0
-    # 全会话 canonical 幂等（:px 档 fr_session 链路，含 asset 行画回）
-    s = ds.build_session(entries, seed=1)
-    assert s["prec"] == "px"
+    # 全会话 canonical 幂等（:px +d 档 fr_session 链路，含 asset 行画回与 S 行）
+    s = ds.build_session(entries, seed=1, has_same=has_same)
+    assert s["prec"] == "px" and s["delta"]
     text = fr_session.dump_text(s)
     assert "asset font 1 14.000000 00010203" in text
+    assert "\nS 0\n" in text
     assert fr_session.dump_text(fr_session.parse_text(text)) == text
     p = tmp_path / "d.fr"
     ds.write_session(s, str(p))
@@ -86,8 +106,9 @@ def _tiny_stream(asset_rows=("asset font 1 14.000000 00010203",),
                  out_rows=("C 0 0 0 255",)):
     from dream import session as ds
     frames = ds.parse_chunk("frame 0\n" + "\n".join(out_rows))
-    entries = ds.seal_frames(frames, kit_rows=[("asset", fc.parse_line(a)[1]) for a in asset_rows],
-                             dt=0.066667)
+    entries, _ = ds.seal_frames(frames,
+                                kit_rows=[("asset", fc.parse_line(a)[1]) for a in asset_rows],
+                                dt=0.066667)
     return fr_session.dump_text(ds.build_session(entries, seed=1))
 
 
@@ -121,12 +142,34 @@ def test_lint_frame_order():
     # dt 不在帧首（手工拼一条坏流：帧首塞 clear 再 dt）
     from dream import session as ds
     frames = ds.parse_chunk("frame 0\nclear 0 0 0 255")
-    entries = ds.seal_frames(frames, kit_rows=[], dt=0.066667)
+    entries, has_same = ds.seal_frames(frames, kit_rows=[], dt=0.066667)
     block = entries[0][1]
     block[0], block[1] = block[1], block[0]  # 破坏行序
-    text = fr_session.dump_text(ds.build_session(entries, seed=1))
+    text = fr_session.dump_text(ds.build_session(entries, seed=1, has_same=has_same))
     diags = fr_lint.lint_text(text)
     assert any(d.startswith("L004") for d in diags)
+
+
+def test_lint_s_frame_and_negotiation():
+    """S 帧对账（same: 锚）与 L005 协商缺失。"""
+    from dream import session as ds
+    from tools import fr_lint
+    frames = ds.parse_chunk("frame 0\nC 0 0 0 255\nframe 1\nS 0\n")
+    entries, has_same = ds.seal_frames(frames, kit_rows=[], dt=0.066667)
+    text = fr_session.dump_text(ds.build_session(entries, seed=1, has_same=has_same))
+    assert fr_lint.lint_text(text) == []  # 带 +d 的 S 帧全绿
+    # 摘掉 +d（协商缺失）→ L005
+    text_no_d = text.replace(" :px +d", " :px", 1)
+    diags = fr_lint.lint_text(text_no_d)
+    assert any(d.startswith("L005") for d in diags)
+    # 篡改 S 帧 d_crc → L002
+    lines = text.split("\n")
+    for i, l in enumerate(lines):
+        if l == "S 0":
+            lines[i + 2] = "d_crc 123456789"  # S 0 / s_crc / d_crc
+            break
+    diags = fr_lint.lint_text("\n".join(lines))
+    assert any(d.startswith("L002") and "帧1" in d for d in diags)
 
 
 # ---------------- T3：fr-assets kit 抽取 ----------------
@@ -245,9 +288,12 @@ def test_driver_llm_requires_env(monkeypatch):
 # ---------------- T6：run CLI 端到端（60 帧 from-file 全链） ----------------
 
 def _gen_chunk_file(path, n_frames):
-    """确定性 60 帧剧本（:px 形）：hero.x 每帧 +4，清屏+方块+顶栏；分 6 段 chunk。"""
+    """确定性 60 帧剧本（:px 形 + S 帧驻留段）：hero.x 每帧 +4，帧 30-39 驻留 S 链。"""
     parts = []
     for i in range(n_frames):
+        if 30 <= i < 40:
+            parts.append("frame %d\nS %d" % (i, i - 1))  # 驻留段：链式 S
+            continue
         x = 40 + 4 * i
         parts.append("frame %d\nC 20 24 36 255\n"
                      "R 0 %d 240 48 48 0 0 1 255 255 255 255\n"

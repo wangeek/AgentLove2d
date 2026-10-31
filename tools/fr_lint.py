@@ -7,7 +7,9 @@
   L002 d_crc 对账：end 段 d_crc 须等于重算 CRC32(当帧 out 行 "\\n" 连接)（全流通用口径）；
   L003 s_crc 对账：dream 口径（st 行 CRC）——仅 dream=True 时启用
        （录制流 s_crc=注册状态根子图口径，跨口径不可比，D14 注）；
-  L004 帧行序：dt 须为帧首行、end 双行须为帧末两行、asset 行仅允许出现在首帧。
+  L004 帧行序：dt 须为帧首行、end 双行须为帧末两行、asset 行仅允许出现在首帧、
+       S 行必须独占帧（帧内除 dt/end 外唯一内容行）。
+  L005 增量协商：S 行在场而 head 缺 `+d` 标记。
 诊断形态：编译器式 "Lxxx 帧F: 消息"（供打回 LLM 自修复）。
 """
 import os
@@ -43,6 +45,9 @@ def lint_text(text, dream=False):
         return ["L000 解析: %s" % e]
     lines = text.split("\n")
     diags, seen_assets = set(), set()
+    head = lines[0] if lines else ""
+    head_has_d = head.endswith(" +d")
+    has_same = False
     frame_lines = {}
     fidx = -1
     for l in lines[1:]:
@@ -56,6 +61,8 @@ def lint_text(text, dream=False):
     for fidx, rows_txt in frame_lines.items():
         declared = set()
         out_txt = []
+        s_ref = None
+        content_n = 0
         for l in rows_txt:
             if l.startswith("asset "):
                 if fidx != 0:
@@ -67,10 +74,16 @@ def lint_text(text, dream=False):
                 ref = int(t[1])
                 if ref not in declared and ref not in seen_assets:
                     diags.add("L001 帧%d: 引用未声明资产 %d" % (fidx, ref))
-            if l.startswith(_OUT_PREFIXES):
+            if l.startswith("S "):
+                s_ref = int(l.split(" ")[1])
+                has_same = True
+            if l.startswith(_OUT_PREFIXES) and not l.startswith("S "):
                 out_txt.append(l)
-            elif not l.startswith(_OTHER_PREFIXES):
+                content_n += 1
+            elif not l.startswith(_OTHER_PREFIXES) and not l.startswith("S "):
                 diags.add("L004 帧%d: 未认识的行前缀 %r" % (fidx, l.split(" ")[0]))
+        if s_ref is not None and content_n:
+            diags.add("L004 帧%d: S 行必须独占帧" % fidx)
         seen_assets |= declared
         # L004 行序：dt 首、end 双行殿后
         if not rows_txt or not rows_txt[0].startswith("dt "):
@@ -78,17 +91,21 @@ def lint_text(text, dream=False):
         if len(rows_txt) < 2 or not rows_txt[-1].startswith("d_crc ") \
                 or not rows_txt[-2].startswith("s_crc "):
             diags.add("L004 帧%d: end 双行须殿后" % fidx)
-        # L002 d_crc 对账（全流通用口径）
+        # L002 d_crc 对账（全流通用口径）；S 帧=锚声明 CRC("same:<ref>")（fr_session.cpp:363）
         end = [l for l in rows_txt if l.startswith("d_crc ")]
         if end:
             got = int(end[0].split(" ")[1])
-            if got != _crc(out_txt):
-                diags.add("L002 帧%d: d_crc %d ≠ 重算 %d" % (fidx, got, _crc(out_txt)))
+            exp = zlib.crc32(("same:%d" % s_ref).encode()) & 0xFFFFFFFF \
+                if s_ref is not None else _crc(out_txt)
+            if got != exp:
+                diags.add("L002 帧%d: d_crc %d ≠ 重算 %d" % (fidx, got, exp))
         if dream:
             sc = [l for l in rows_txt if l.startswith("s_crc ")]
             st_txt = [l for l in rows_txt if l.startswith("st ")]
             if sc and int(sc[0].split(" ")[1]) != _crc(st_txt):
                 diags.add("L003 帧%d: s_crc 与 st 行不符（dream 口径）" % fidx)
+    if has_same and not head_has_d:
+        diags.add("L005 head: S 行在场而缺 +d 增量协商标记")
     return sorted(diags)
 
 

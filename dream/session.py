@@ -19,6 +19,9 @@ from tools.fr_gen import tbl
 # LLM 可书写的 out op（cmd.tbl out 段全集中 dream M1 开放面）
 LLM_OPS = {"clear", "draw", "print", "rect", "line", "poly", "circle",
            "arc", "points", "rt", "scissor"}
+# S 行（帧级重复引用）——LLM 可写（无行身份簿记：ref=已写帧号，D14 可实测项
+# 落地）；S 帧进入流则 head 标 +d（能力协商，cmd.tbl S 行 notes）
+LLM_REF_OPS = {"S"}
 # 封装行白名单——出现在 chunk 里即职责越界
 _RUNNER_OPS = {"dt", "asset", "ev", "call", "timer", "rngc", "err", "s_crc", "d_crc"}
 
@@ -61,9 +64,20 @@ def parse_chunk(chunk_text):
             if op == "st":
                 raise ValueError("第 %d 行：dream :px 档不写 st（连续性靠滑窗 out 行）"
                                  % no)
-            if op not in LLM_OPS:
+            if op == "S":
+                if cur[1]:
+                    raise ValueError("第 %d 行：S 行必须独占一帧" % no)
+                ref = fields["ref"]
+                if not (0 <= ref < cur[0]):
+                    raise ValueError("第 %d 行：S 引用 %d 非已写帧（< 本帧 %d）"
+                                     % (no, ref, cur[0]))
+                cur[1].append((op, fields))
+            elif op not in LLM_OPS:
                 raise ValueError("第 %d 行：op %r 不在 dream 内容行白名单" % (no, op))
-            cur[1].append((op, fields))
+            else:
+                if any(o == "S" for o, _ in cur[1]):
+                    raise ValueError("第 %d 行：S 行之后不得再写内容行" % no)
+                cur[1].append((op, fields))
     if cur is not None:
         frames.append(cur)
     if not frames:
@@ -74,25 +88,32 @@ def parse_chunk(chunk_text):
 def seal_frames(frames, kit_rows, dt):
     """[(帧号, rows)] → Session entries。行序：dt → asset(仅首帧) → out → end 双行。
 
-    kit_rows 为 ("asset", {"raw": 行文本}) 形——raw 透传不受档位渲染影响。
+    kit_rows 为 ("asset", parsed_fields) 形。S 帧（行集=[("S",{ref})]）：
+    d_crc = CRC32("same:<ref>")（锚声明本身，fr_session.cpp:363 同口径）。
     """
-    entries, first = [], True
+    entries, first, has_same = [], True, False
     for _no, rows in frames:
         block = [("dt", {"val": dt})]
         if first:
             block += list(kit_rows)
             first = False
         block += rows
-        out_txt = [_rc.render_line_px(op, f) for op, f in rows]
+        if len(rows) == 1 and rows[0][0] == "S":
+            has_same = True
+            ref = rows[0][1]["ref"]
+            d = zlib.crc32(("same:%d" % ref).encode()) & 0xFFFFFFFF
+        else:
+            out_txt = [_rc.render_line_px(op, f) for op, f in rows]
+            d = crc32_rows(out_txt)
         block.append(("s_crc", {"crc": 0}))  # px 生成档无 st——哨兵（D14：回放不消费）
-        block.append(("d_crc", {"crc": crc32_rows(out_txt)}))
+        block.append(("d_crc", {"crc": d}))
         entries.append(("frame", block))
-    return entries
+    return entries, has_same
 
 
-def build_session(entries, seed, width=640, height=480):
+def build_session(entries, seed, width=640, height=480, has_same=False):
     return dict(width=width, height=height, sha=table_sha(), loglvl="full",
-                seed=seed, prec="px", delta=False,
+                seed=seed, prec="px", delta=has_same,  # S 行在场→head +d（能力协商）
                 entries=[("cmnt", "dream runner session (B18 M1 :px)")] + entries)
 
 

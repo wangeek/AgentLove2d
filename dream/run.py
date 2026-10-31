@@ -97,9 +97,10 @@ def main(argv=None):
                 return 1
             continue
         # 增量 seal → 语义闸 → 通过才计入流文本（窗口/最终输出一致）
+        entries, has_same = dsession.seal_frames(frames, kit_rows, a.dt)
         probe = dsession.write_session(
-            dsession.build_session(dsession.seal_frames(frames, kit_rows, a.dt),
-                                   seed=a.seed), a.out)
+            dsession.build_session(entries, seed=a.seed, has_same=has_same),
+            a.out)
         bad = _semantic_guard(probe)
         if bad:
             frames = frames[:len(frames) - len(chunk_frames)]
@@ -114,9 +115,10 @@ def main(argv=None):
         stream_text = probe
         retry, feedback = 0, ""
     frames = frames[:a.frames]
+    entries, has_same = dsession.seal_frames(frames, kit_rows, a.dt)
     text = dsession.write_session(
-        dsession.build_session(dsession.seal_frames(frames, kit_rows, a.dt),
-                               seed=a.seed, width=a.width, height=a.height), a.out)
+        dsession.build_session(entries, seed=a.seed, width=a.width,
+                               height=a.height, has_same=has_same), a.out)
     diags = fr_lint.lint_text(text, dream=True)
     for d in diags:
         print("lint:", d, file=sys.stderr)

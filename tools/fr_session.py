@@ -169,9 +169,13 @@ def dump_text(s):
             out.append("frame %d" % idx); idx += 1
             for row in payload:
                 try:
-                    # B15：增量行 raw 原样（{"raw": line}）；其余 op 渲染
+                    # B15：增量行 raw 原样（{"raw": line}——裸 dict 或 (op, {"raw"})
+                    # 元组两形态，parse 产后者）；其余 op 渲染
                     if isinstance(row, dict) and "raw" in row:
                         out.append(row["raw"])
+                    elif (isinstance(row, tuple) and len(row) == 2
+                          and isinstance(row[1], dict) and "raw" in row[1]):
+                        out.append(row[1]["raw"])
                     else:
                         op, fields = row
                         out.append(render(op, fields))
@@ -258,13 +262,30 @@ def dump_binary(s):
            s["width"].to_bytes(2, "little"), s["height"].to_bytes(2, "little"),
            binascii.unhexlify(s["sha"]),
            bytes([_LOGLVL[s["loglvl"]]]), s["seed"].to_bytes(8, "little")]
+    prec = s.get("prec", "full")
+
+    def _enc_rows(payload):
+        for row in payload:
+            # B15 增量行 raw 形态（parse 产 (op, {"raw"}) 元组）——先按档
+            # re-parse 成 fields 再编码（raw 字典不是合法 fields）
+            if (isinstance(row, tuple) and len(row) == 2
+                    and isinstance(row[1], dict) and "raw" in row[1]):
+                op, f = (_rc.parse_line_px if prec != "full" else _rc.parse_line)(
+                    row[1]["raw"])
+            elif isinstance(row, dict) and "raw" in row:
+                op, f = (_rc.parse_line_px if prec != "full" else _rc.parse_line)(
+                    row["raw"])
+            else:
+                op, f = row
+            yield _rc.encode_row(op, f)
+
     for entry_no, (kind, payload) in enumerate(s["entries"]):
         if kind == "cmnt":
             b = payload.encode("utf-8")
             out.append(bytes([TAG_CMNT]) + len(b).to_bytes(4, "little") + b)
         else:
             try:
-                body = b"".join(_rc.encode_row(op, f) for op, f in payload)
+                body = b"".join(_enc_rows(payload))
             except ValueError as e:
                 raise SessionError("entry %d：%s" % (entry_no, e)) from e
             out.append(bytes([TAG_FRAME]) + len(body).to_bytes(4, "little") + body)
