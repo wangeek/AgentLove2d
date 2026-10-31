@@ -48,6 +48,7 @@
 | 2026-10-30 | B18 dream M1（LLM 直出） | Qwen3.8 直出 60 帧（剑侠 kit 18 资产）：**生成密度 ≈119 tok/帧**（477 B/帧 = out 338 + st 82 + 封装；op 分布 draw 2/帧+circle+print+clear）；全流 15.77 MB 中资产段 15.74 MB 占 **99.8%**（kit 死重，B16 内容寻址正靶）；.frb 7.88 MB（hex 减半） | LLM 生成密度基线 |
 | 2026-10-30 | B18 dream :px 直写切换 | 同题英雄行走：:full 119 tok/帧（477 B）→ **:px ≈55 tok/帧（~250 B，-53%）**；LLM 直写 :px（短名/整数量化/缺省省略），fr-as 归档自动 :full（.frb 档位自由）。**新瓶颈定位**：网关 `/thinking/v1` 强制 reasoning（同题 942~17636 字符随机），延迟 2.8~40s 波动——nginx 60s 超时是主要失败源（504），客户端解=chunk-frames 旋钮+重试，根治=网关调超时/换 no-thinking 路由 | **-53% 生成 token** |
 | 2026-10-31 | B18 dream append-only messages（缓存友好） | DeepSeek flash 60 帧 :px 直写：**usage 实测** prompt 24,981（**命中缓存 17,280=69%**）/ completion 7,729 / 墙钟 27s（滑窗版 92s，-71%；chunk 均时 4.0s）。滑窗改写中段是反缓存优化（前缀缓存要求第 0 字节起逐字节相同）——append-only（system 静态+turn 对追加）让除最新段外全命中。净内容账 ≈50 tok/帧；成本大头=flash 档 reasoning（chat 档为零） | **缓存命中 69%、墙钟 -71%** |
+| 2026-10-31 | B18 dream 本地 Qwen `/no-thinking` 路由 | 同题 60 帧 :px（本地 Qwen3.8-flash，append-only）：usage prompt 31,245 / completion 9,257（**reasoning_tokens=0**——`/no-thinking/v1` 与 `/v1` 路由实测关思考，`/thinking/v1` 强制开）/ 墙钟 **45s、chunk 均时 7.2s±0.1**（零重试零网络波动）；lint/check/FR_PLAY 全过。**三家对照**：DeepSeek flash 27s（有缓存）/ 本地 no-thinking 45s（无缓存、无网络、无费用）/ 本地 thinking 路由=不可用（60s 超时全灭）。**dream 后端推荐序：DeepSeek（质量+缓存）> 本地 no-thinking（免费+稳定）**；`enable_thinking` 参数网关不支持，路由名即开关 | **本地后端可用化（免费稳定档）** |
 
 ### B15 增量档实测（2026-10-29，双场景；FR_DELTA=1，I 帧缺省策略 + pd 优化）
 
