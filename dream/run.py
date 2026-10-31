@@ -37,6 +37,14 @@ def _semantic_guard(text):
     return fr_lint.lint_text(text, dream=True)
 
 
+def _chatlog_sanitize(text):
+    """会话日志清洗：长 hex 串折叠（LLM 面本无字节体——防御反馈串与未来扩展）。"""
+    import re
+    text = re.sub(r"[0-9a-fA-F]{32,}",
+                  lambda m: "<hex %d chars>" % len(m.group(0)), text)
+    return text
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dream.run")
     ap.add_argument("--frames", type=int, required=True)
@@ -52,6 +60,8 @@ def main(argv=None):
     ap.add_argument("--max-retry", type=int, default=2)
     ap.add_argument("--chunk-frames", type=int, default=0,
                     help="每次生成请求的帧数上限（0=不限；网关超时建议 10）")
+    ap.add_argument("--chatlog", default="",
+                    help="LLM 会话日志路径（缺省 <out>.chatlog；只记每次追加的提示词与回应）")
     a = ap.parse_args(argv)
     if bool(a.from_file) == a.llm:
         print("dream.run: --from-file 与 --llm 二选一", file=sys.stderr)
@@ -68,16 +78,46 @@ def main(argv=None):
     frames, stream_text, retry, feedback = [], "", 0, ""
     import time
     chunk_times = []
+    # 会话日志：只记每次追加的 user（剧本前缀首回合后折叠）与 assistant 原文
+    # ——append-only 下请求会重发全史，日志按增量记，避免重复与冗长
+    log_path = a.chatlog or (a.out + ".chatlog")
+    chatlog = open(log_path, "w", encoding="utf-8", newline="\n")
+    chatlog.write("# dream 会话日志 %s（model=%s）\n"
+                  % (time.strftime("%Y-%m-%d %H:%M:%S"),
+                     os.environ.get("LLM_MODEL", "from-file")))
+
+    def _log(tag, text):
+        chatlog.write("\n===== %s =====\n%s\n" % (tag, _chatlog_sanitize(text)))
+        chatlog.flush()
+
+    if a.llm:
+        _log("SYSTEM（静态件，每次请求同文重发——仅记一次）", messages[0]["content"])
+    turn_seq = 0
     while len(frames) < a.frames:
         n_left = min(a.chunk_frames, a.frames - len(frames)) if a.chunk_frames \
             else a.frames - len(frames)
         base = len(messages)
+        turn_seq += 1
         if a.llm:
             messages.append({"role": "user", "content": dprompt.build_turn(
                 a.directive, len(frames), n_left, feedback)})
+            shown = messages[base]["content"]
+            if turn_seq > 1 and shown.startswith(a.directive):
+                shown = "<剧本同前，略>" + shown[len(a.directive):]
+            _log("TURN %d · user（本次追加）" % turn_seq, shown)
+        usage_before = dict(drv.usage_totals)
         try:
             t0 = time.perf_counter()
             raw = drv.generate(messages)
+            if not a.llm:
+                _log("CHUNK %d（from-file）" % turn_seq, raw)
+            else:
+                _log("TURN %d · assistant（LLM 回应）" % turn_seq, raw)
+                du = {k: drv.usage_totals[k] - usage_before.get(k, 0)
+                      for k in drv.usage_totals}
+                if du:
+                    chatlog.write("（本回合 usage 增量: %s）\n" % du)
+                    chatlog.flush()
             messages.append({"role": "assistant", "content": raw})
             chunk_frames = dsession.parse_chunk(raw)
             dt_chunk = time.perf_counter() - t0
@@ -148,6 +188,10 @@ def main(argv=None):
              (sum(chunk_times) / len(chunk_times)) if chunk_times else 0.0))
     if drv.usage_totals:
         print("dream.run: usage %s" % drv.usage_totals, file=sys.stderr)
+    _log("DONE", "%d 帧 → %s（lint %s；请求 %d 次）"
+         % (len(frames), a.out, "全绿" if not diags else "%d 条诊断" % len(diags),
+            turn_seq))
+    chatlog.close()
     return 0 if not diags else 1
 
 
