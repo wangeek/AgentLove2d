@@ -48,7 +48,6 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
-    ap.add_argument("--window-k", type=int, default=8)
     ap.add_argument("--directive", default="一个方块从屏幕左侧匀速走到右侧，顶栏显示进度")
     ap.add_argument("--max-retry", type=int, default=2)
     ap.add_argument("--chunk-frames", type=int, default=0,
@@ -59,23 +58,27 @@ def main(argv=None):
         return 2
     drv = ddrv.FromFileDriver(a.from_file) if a.from_file else ddrv.LlmDriver()
     kit_rows = load_kit_rows(a.kit)
-    vocab = dprompt.load_vocab()
-    catalog = dprompt.load_catalog(a.kit)
+    # LLM 模式：append-only messages（system 静态件 + 逐 chunk 追加 turn 对）
+    # ——前缀缓存要求从第 0 字节起逐字节相同，滑窗改写中段是反缓存优化
+    #（2026-10-31 用户缓存洞察；设计 §5 已同步）。from-file 忽略消息内容。
+    messages = []
+    if a.llm:
+        messages.append({"role": "system", "content": dprompt.build_system(
+            dprompt.load_vocab(), dprompt.load_catalog(a.kit), a.width, a.height)})
     frames, stream_text, retry, feedback = [], "", 0, ""
     import time
     chunk_times = []
     while len(frames) < a.frames:
-        directive = a.directive
-        if a.chunk_frames > 0:
-            directive += "；本次只输出 %d 帧" % min(a.chunk_frames, a.frames - len(frames))
-        if feedback:
-            directive += feedback  # 诊断回喂（temp=0 下同 prompt 必复读——自修复靠新信息）
-        prompt = dprompt.build_prompt(vocab, catalog,
-                                      dprompt.sliding_window(stream_text, a.window_k),
-                                      directive, len(frames))
+        n_left = min(a.chunk_frames, a.frames - len(frames)) if a.chunk_frames \
+            else a.frames - len(frames)
+        base = len(messages)
+        if a.llm:
+            messages.append({"role": "user", "content": dprompt.build_turn(
+                a.directive, len(frames), n_left, feedback)})
         try:
             t0 = time.perf_counter()
-            raw = drv.generate(prompt)
+            raw = drv.generate(messages)
+            messages.append({"role": "assistant", "content": raw})
             chunk_frames = dsession.parse_chunk(raw)
             dt_chunk = time.perf_counter() - t0
             chunk_times.append(dt_chunk)
@@ -86,8 +89,9 @@ def main(argv=None):
                                  % (chunk_frames[0][0], len(frames)))
             frames += chunk_frames
         except (ValueError, RuntimeError) as e:
+            del messages[base:]  # 回滚本轮 user(+assistant)——前缀保持已验状态
             retry += 1
-            feedback = "；上次输出被拒：%s——请严格按词汇表修正后重出" % str(e)[:300]
+            feedback = "上次输出被拒：%s——请严格按词汇表修正后重出" % str(e)[:300]
             if retry > a.max_retry:
                 print("dream.run: 重试上限（%d）：%s" % (a.max_retry, e), file=sys.stderr)
                 return 1
@@ -99,8 +103,9 @@ def main(argv=None):
         bad = _semantic_guard(probe)
         if bad:
             frames = frames[:len(frames) - len(chunk_frames)]
+            del messages[base:]
             retry += 1
-            feedback = "；上次输出被 lint 拒绝：%s——资产只可引用目录单内的 id" \
+            feedback = "上次输出被 lint 拒绝：%s——资产只可引用目录单内的 id" \
                        % "; ".join(bad[:5])[:300]
             if retry > a.max_retry:
                 print("dream.run: 语义闸重试上限：%s" % "; ".join(bad), file=sys.stderr)
@@ -119,6 +124,8 @@ def main(argv=None):
           % (len(frames), a.out,
              "全绿" if not diags else "%d 条诊断" % len(diags),
              (sum(chunk_times) / len(chunk_times)) if chunk_times else 0.0))
+    if drv.usage_totals:
+        print("dream.run: usage %s" % drv.usage_totals, file=sys.stderr)
     return 0 if not diags else 1
 
 

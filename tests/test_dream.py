@@ -170,18 +170,23 @@ def test_fr_assets_from_files(tmp_path):
     assert rows[1].startswith("asset font 2 14.000000 00010000")
 
 
-# ---------------- T4：提示词工程 ----------------
+# ---------------- T4：提示词工程（append-only messages；缓存友好） ----------------
 
-def test_prompt_assembly_and_window():
+def test_prompt_system_and_turn():
     from dream import prompt as dp
     vocab = dp.load_vocab()
     assert "frame N" in vocab and "C " in vocab
     catalog = dp.load_catalog("dream")  # 无 kit 时如实声明无资产
-    p = dp.build_prompt(vocab, catalog, window_text="frame 0\nclear 0 0 0 255",
-                        directive="英雄从左走到右", next_frame=1)
-    for part in (vocab, catalog, "frame 0", "英雄从左走到右", "frame 1"):
-        assert part in p
-    # 滑窗：取流文本最后 k 个 frame 块；asset hex 行过滤（不进 LLM 窗口）
+    system = dp.build_system(vocab, catalog, 640, 480)
+    for part in (vocab, catalog, "640x480"):
+        assert part in system
+    turn = dp.build_turn("英雄从左走到右", next_frame=3, n_frames=10,
+                         feedback="上次输出被拒：L001")
+    for part in ("英雄从左走到右", "frame 3", "10 帧", "L001"):
+        assert part in turn
+    # 无 feedback 时不含该段
+    assert "被拒" not in dp.build_turn("d", 0, 5)
+    # 滑窗（投影/诊断工具，不进生成路径）：asset hex 行过滤
     stream = ("frb1 640 480 x full 1\nasset image 1 3 2 " + "ab" * 40 + "\n"
               "frame 0\nclear 0 0 0 255\nframe 1\nclear 0 0 0 255\nframe 2\nclear 0 0 0 255\n")
     w = dp.sliding_window(stream, 2)
@@ -189,7 +194,7 @@ def test_prompt_assembly_and_window():
     assert "asset " not in w and "frame 0" not in w
 
 
-# ---------------- T5：driver（FromFile 确定性 + LLM env） ----------------
+# ---------------- T5：driver（FromFile 确定性 + LLM env/messages/usage） ----------------
 
 def test_driver_from_file(tmp_path):
     from dream import driver
@@ -197,10 +202,36 @@ def test_driver_from_file(tmp_path):
     f.write_text("frame 0\nclear 0 0 0 255\n### CHUNK\nframe 1\nclear 0 0 0 255\n",
                  encoding="utf-8")
     d = driver.FromFileDriver(str(f))
-    assert "frame 0" in d.generate("prompt-ignored")
-    assert "frame 1" in d.generate("prompt-ignored")
+    assert "frame 0" in d.generate([])
+    assert "frame 1" in d.generate([])
+    assert d.usage_totals == {}
     with pytest.raises(RuntimeError):
-        d.generate("exhausted")
+        d.generate([])
+
+
+def test_driver_llm_usage_accumulates():
+    """usage 透传累加（fake 注入，无网络）。"""
+    from dream import driver
+
+    class Fake(driver.LlmDriver):
+        def __init__(self):
+            self.base, self.key, self.model = "b", "", "m"
+            self.usage_totals = {}
+            self.n = 0
+
+        def generate(self, messages):
+            self.n += 1
+            self.usage_totals["prompt_tokens"] = self.usage_totals.get("prompt_tokens", 0) \
+                + 100 * self.n
+            self.usage_totals["completion_tokens"] = \
+                self.usage_totals.get("completion_tokens", 0) + 10
+            return "frame 0\nclear 0 0 0 255\n"
+
+    fake = Fake()
+    msgs = [{"role": "system", "content": "sys"}]
+    fake.generate(msgs)
+    fake.generate(msgs)
+    assert fake.usage_totals == {"prompt_tokens": 300, "completion_tokens": 20}
 
 
 def test_driver_llm_requires_env(monkeypatch):

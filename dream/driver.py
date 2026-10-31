@@ -1,10 +1,14 @@
 # dream/driver.py
-"""LLM 适配（B18 M1）：FromFile（确定性，CI 零 token）+ LlmDriver（OpenAI 兼容）。
+"""LLM 适配（B18）：FromFile（确定性，CI 零 token）+ LlmDriver（OpenAI 兼容）。
+
+接口统一 generate(messages)——messages 为 OpenAI chat 数组
+（[{"role", "content"}, ...]；FromFile 忽略内容按文件顺序吐 chunk）。
 
 LlmDriver 走标准库 urllib——零第三方依赖；配置全 env：
-LLM_BASE_URL（OpenAI 兼容根，如 http://host:port/v1）、LLM_API_KEY（可空）、
-LLM_MODEL。实测端点（2026-10-30）：本地 Qwen3.8 thinking 网关，
-content 可含前导空白（parse_chunk 空行宽松吸收）。
+LLM_BASE_URL（OpenAI 兼容根，如 https://api.deepseek.com）、LLM_API_KEY（可空）、
+LLM_MODEL。**usage 记账**：响应 usage 的数值字段累加进 usage_totals
+（prompt_tokens / completion_tokens / prompt_cache_hit_tokens 等，厂商各异
+按键名透传）——计费口径的真实数字，进 benchmarks 用。
 """
 import json
 import os
@@ -19,8 +23,9 @@ class FromFileDriver:
         with open(path, encoding="utf-8") as f:
             self._chunks = [c for c in f.read().split("### CHUNK") if c.strip()]
         self._i = 0
+        self.usage_totals = {}
 
-    def generate(self, prompt):
+    def generate(self, messages):
         if self._i >= len(self._chunks):
             raise RuntimeError("from-file chunk 已耗尽（%d 段）" % len(self._chunks))
         c = self._chunks[self._i].strip() + "\n"
@@ -35,12 +40,13 @@ class LlmDriver:
         self.model = os.environ.get("LLM_MODEL", "")
         if not (self.base and self.model):
             raise RuntimeError("LLM_BASE_URL / LLM_MODEL 未配置（LLM_API_KEY 可空）")
+        self.usage_totals = {}
 
-    def generate(self, prompt):
+    def generate(self, messages):
         req = urllib.request.Request(
             self.base.rstrip("/") + "/chat/completions",
             data=json.dumps({"model": self.model, "temperature": 0,
-                             "messages": [{"role": "user", "content": prompt}]}).encode(),
+                             "messages": messages}).encode(),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + self.key})
         try:
             with urllib.request.urlopen(req, timeout=300) as r:
@@ -55,4 +61,7 @@ class LlmDriver:
                                " --chunk-frames 重试）body=%s" % (e.code, body)) from e
         except (urllib.error.URLError, OSError) as e:
             raise RuntimeError("LLM 网络错误: %s" % e) from e
-        return data["choices"][0]["message"]["content"]
+        for k, v in (data.get("usage") or {}).items():
+            if isinstance(v, (int, float)):
+                self.usage_totals[k] = self.usage_totals.get(k, 0) + v
+        return data["choices"][0]["message"]["content"] or ""
