@@ -47,6 +47,7 @@
 | 2026-10-29 | B15 帧间增量（P1 + pd 优化） | **稳态/帧**：world_map 103.6→**2.03 KB（-98%）**、battle 7.2→**2.45 KB（-66%）**；@30fps world_map **0.50 Mbps**、battle **0.60 Mbps（双场景均进电话线级）** | **-98%**（静态锚） |
 | 2026-10-30 | B18 dream M1（LLM 直出） | Qwen3.8 直出 60 帧（剑侠 kit 18 资产）：**生成密度 ≈119 tok/帧**（477 B/帧 = out 338 + st 82 + 封装；op 分布 draw 2/帧+circle+print+clear）；全流 15.77 MB 中资产段 15.74 MB 占 **99.8%**（kit 死重，B16 内容寻址正靶）；.frb 7.88 MB（hex 减半） | LLM 生成密度基线 |
 | 2026-10-30 | B18 dream :px 直写切换 | 同题英雄行走：:full 119 tok/帧（477 B）→ **:px ≈55 tok/帧（~250 B，-53%）**；LLM 直写 :px（短名/整数量化/缺省省略），fr-as 归档自动 :full（.frb 档位自由）。**新瓶颈定位**：网关 `/thinking/v1` 强制 reasoning（同题 942~17636 字符随机），延迟 2.8~40s 波动——nginx 60s 超时是主要失败源（504），客户端解=chunk-frames 旋钮+重试，根治=网关调超时/换 no-thinking 路由 | **-53% 生成 token** |
+| 2026-10-31 | B18 dream append-only messages（缓存友好） | DeepSeek flash 60 帧 :px 直写：**usage 实测** prompt 24,981（**命中缓存 17,280=69%**）/ completion 7,729 / 墙钟 27s（滑窗版 92s，-71%；chunk 均时 4.0s）。滑窗改写中段是反缓存优化（前缀缓存要求第 0 字节起逐字节相同）——append-only（system 静态+turn 对追加）让除最新段外全命中。净内容账 ≈50 tok/帧；成本大头=flash 档 reasoning（chat 档为零） | **缓存命中 69%、墙钟 -71%** |
 
 ### B15 增量档实测（2026-10-29，双场景；FR_DELTA=1，I 帧缺省策略 + pd 优化）
 
