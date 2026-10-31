@@ -684,6 +684,8 @@ def parse_line_px(line):
             fields[name] = qf(float(tok))
             pos += 1
         elif typ == "rgba8":
+            if pos + 4 > len(toks):
+                raise ValueError("%s 行 rgba8 不足 4 分量" % op)
             fields[name] = (int(toks[pos]), int(toks[pos + 1]),
                             int(toks[pos + 2]), int(toks[pos + 3]))
             pos += 4
@@ -695,6 +697,9 @@ def parse_line_px(line):
         elif typ == "f32[]":
             count = int(tok)
             pos += 1
+            if count < 0 or pos + 2 * count > len(toks):
+                raise ValueError("%s 行点列 token 不足：声明 %d 点，仅剩 %d token"
+                                 % (op, count, len(toks) - pos))
             pts = []
             for _ in range(count):
                 pts.append((qf(float(toks[pos])), qf(float(toks[pos + 1]))))

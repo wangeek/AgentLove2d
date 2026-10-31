@@ -85,6 +85,16 @@ def test_parse_chunk_delta_vocab():
             ds.parse_chunk('frame 0\nC 0 0 0 255\n' + bad if not bad.startswith("frame 0") else bad)
 
 
+def test_parse_chunk_malformed_pts_valueerror():
+    """LLM 畸形点列（含 INS/ENTER 载荷递归）→ ValueError 走打回通道，不得 IndexError。"""
+    from dream import session as ds
+    for chunk in ("frame 0\nLN 3 100 200 300\n",
+                  'frame 0\nC 0 0 0 255\nENTER "LN 3 100 200 300"\n',
+                  'frame 0\nD 1 0 100 200 0 1 1\nframe 1\nPOSE 1 "PY 0 3 1 2 3"\n'):
+        with pytest.raises(ValueError):
+            ds.parse_chunk(chunk)
+
+
 def test_resolve_tier2_downgrade():
     """Tier2 → Tier1 确定性降级 + 三口径 d_crc + 展开态正确性。"""
     from dream import session as ds

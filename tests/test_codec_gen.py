@@ -121,6 +121,21 @@ def test_px_parse_roundtrip_equiv():
     _, g2 = fc.parse_line_px("D 7 0 100 200 0.000000 1.000000 1.000000 0 0 255 0 0 255")
     assert tuple(g2["color"]) == (255, 0, 0, 255) and g2["ox"] == 0.0
 
+def test_px_parse_malformed_raises_valueerror():
+    """:px 畸形 token 流 → ValueError（LLM 畸形输出须走打回通道，不得 IndexError 穿透）。"""
+    with pytest.raises(ValueError):    # 点列声明 3 点只给 1.5 个坐标
+        fc.parse_line_px("LN 3 100 200 300")
+    with pytest.raises(ValueError):    # 点列吃掉尾部 width/色分量后仍不够
+        fc.parse_line_px("LN 2 100 200 300 400 1")
+    with pytest.raises(ValueError):    # 负点数声明
+        fc.parse_line_px("LN -1 100 200 1 0 0 0 255")
+    with pytest.raises(ValueError):    # 巨大点数声明
+        fc.parse_line_px("LN 1000000 100 200 1 0 0 0 255")
+    with pytest.raises(ValueError):    # rgba8 只给 3 分量
+        fc.parse_line_px("D 1 0 10 20 0 1 1 0 0 255")
+    with pytest.raises(ValueError):    # PY 载荷经 INS 递归解析同样须 ValueError
+        fc.parse_line_px("PY 0 3 100 100 200 200 300")
+
 
 def test_px_rect_and_passthrough():
     """rect 短名+量化（无省略）；段行（rt）同形直通。"""

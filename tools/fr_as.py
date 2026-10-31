@@ -34,7 +34,10 @@ def main(argv):
         with open(args.out, "wb") as f:
             f.write(blob)
     except (fs.SessionError, ValueError, OSError) as e:
-        print("fr-as: %s" % e, file=sys.stderr)
+        # 错误消息 UTF-8 输出（tests/test_cli._run 按 utf-8 解码；Windows 管道
+        # 缺省 GBK 会把中文打成乱码——显式字节写，B1 字节纪律）
+        sys.stderr.buffer.write(("fr-as: %s\n" % e).encode("utf-8"))
+        sys.stderr.flush()
         return 1
     return 0
 

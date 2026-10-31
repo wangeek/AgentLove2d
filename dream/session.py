@@ -145,7 +145,16 @@ def parse_chunk(chunk_text):
 
     dream 帧纪律：一帧 = 全量行 | 纯 CP | 编辑行组（Tier1/Tier2 可混组）。
     dt/asset/ev/end/st 行属 runner 或 px 不支持——出现即 ValueError。
+    防御纵深：畸形 token 流（点列/颜色分量不足等）统一 IndexError→ValueError，
+    runner 打回重试通道只认 ValueError 语义；其余异常照常穿透（真 bug 该炸还炸）。
     """
+    try:
+        return _parse_chunk(chunk_text)
+    except IndexError as e:
+        raise ValueError("chunk 行 token 数不足（畸形点列/分量/参数）：%s" % e) from None
+
+
+def _parse_chunk(chunk_text):
     frames, cur = [], None
     for no, line in enumerate(chunk_text.split("\n"), start=1):
         if not line.strip() or line.strip().startswith("```"):
