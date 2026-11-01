@@ -79,8 +79,11 @@ def ev_fields(evs):
         args = []
         for a in e.get("args", []):
             args.append(float(a) if isinstance(a, (int, float)) else (a,))
-        out.append({"slot": max(0, int(e.get("no", 1)) - 1), "type": e["ev"],
-                    "src": 0, "args": args})
+        f = {"slot": max(0, int(e.get("no", 1)) - 1), "type": e["ev"],
+             "src": 0, "args": args}
+        if "frame" in e:        # 日志/控制台用（render 只读 spec 字段，多余键无害）
+            f["frame"] = int(e["frame"])
+        out.append(f)
     return out
 
 
