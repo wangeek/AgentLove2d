@@ -122,7 +122,8 @@ def gen_burst(drv, messages, a, base_frame, n_want, ev_note, chatlog, state):
         except (ValueError, RuntimeError) as e:
             del messages[base:]
             retry += 1
-            feedback = "上次输出被拒：%s——请严格按词汇表修正后重出" % str(e)[:300]
+            feedback = "上次输出被拒：%s——请逐 token 对照词汇表检查每行的参数个数后重出" \
+                       % str(e)[:300]
             if retry > a.max_retry:
                 raise RuntimeError("burst 重试上限：%s" % e) from None
     state["last_feedback"] = feedback
@@ -201,10 +202,24 @@ def main(argv=None):
         evinj = a.out + ".evinj"
         if os.path.isfile(evinj):
             os.remove(evinj)
+        # 协议通告：evinj 路径打到 stdout（会话脚本从这里读——路径唯一化
+        # 防多会话互踩；脚本侧注入前先读此行）
+        print("EVINJ %s" % os.path.abspath(evinj), flush=True)
         proc = subprocess.Popen([a.love, runner_dir], env=env, cwd=_ROOT)
 
         t_total = time.time() + a.max_total
-        last_active = time.time()
+        # 活性=事件或 Runner 渲染证据（runnerdbg 增长=子进程活着在画）；
+        # 初始段 LLM 生成可能 25s+——idle 计时必须排除生成/启动耗时，
+        # 否则点击在生成期到达时，第一轮轮询即误判静默超时（实测）
+        dbg_path = a.out + ".runnerdbg"
+
+        def _dbg_mtime():
+            try:
+                return os.path.getmtime(dbg_path)
+            except OSError:
+                return 0.0
+
+        last_active = max(time.time(), _dbg_mtime())
         evq_off = 0
         while True:
             if proc.poll() is not None:
@@ -234,12 +249,16 @@ def main(argv=None):
                             canon[i][1], dcrcs[i]))
                 stream_len = len(frames)
                 last_active = time.time()
-            elif time.time() - last_active > a.max_idle:
-                print("dream.loop: 静默超时（%.0fs 无事件）" % a.max_idle,
-                      file=sys.stderr)
+            elif (time.time() - last_active > a.max_idle
+                  and time.time() - _dbg_mtime() > a.max_idle):
+                # 双信号：本进程无事件 且 Runner 停止渲染——才是真静默
+                print("dream.loop: 静默超时（%.0fs 无事件且 Runner 无渲染）"
+                      % a.max_idle, file=sys.stderr)
                 proc.terminate()
                 break
             else:
+                if _dbg_mtime() > last_active:
+                    last_active = _dbg_mtime()  # Runner 在画=活着
                 time.sleep(0.2)
         try:
             proc.wait(timeout=5)
