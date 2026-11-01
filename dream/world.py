@@ -108,6 +108,8 @@ def run_rooms(a, drv, kit_rows, chatlog):
     evinj = a.out + ".evinj"
 
     def _append_stream(new_frames, first_ev=None):
+        """新帧 → 流 append。展开失败（对象寻址未配对等）抛 ValueError，
+        由调用方丢弃该 burst 并打回——不炸整局。"""
         nonlocal stream_len
         canon, _exp, dcrcs = dsession.resolve_frames(frames_all)
         with open(a.out, "a", encoding="utf-8", newline="\n") as f:
@@ -149,6 +151,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
             a.directive = directive   # gen_burst 读 a.directive（每房注入）
             _log(chatlog, "ROOM %d DIRECTIVE" % (n + 1), directive)
             room_start = len(frames_all)
+            room_frames = 0
             got = gen_burst(drv, messages, a, len(frames_all),
                             a.frames_initial, "", chatlog, state)
             frames_all += got
@@ -202,10 +205,22 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     note = ("\n【用户操作】发生了用户操作事件，"
                             "注意是否需要给予反馈：\n" + ev_rows_txt)
                     _log(chatlog, "EVENT（Runner 上报）", ev_rows_txt)
-                    got = gen_burst(drv, messages, a, len(frames_all),
-                                    a.burst, note, chatlog, state)
-                    frames_all += got
-                    _append_stream(got, first_ev=ef)
+                    try:
+                        got = gen_burst(drv, messages, a, len(frames_all),
+                                        a.burst, note, chatlog, state)
+                        _append_stream(got, first_ev=ef)
+                        room_frames += len(got)
+                    except ValueError as e:
+                        # 展开失败（对象寻址未配对/参数错）→ 丢整个 burst
+                        # 打回重试——不炸整局（world 鲁棒性）
+                        del frames_all[room_start + room_frames:]
+                        messages[:] = messages[:1]   # 会话重建（干净重试）
+                        state["last_feedback"] = ("上次 burst 被拒：%s——"
+                            "注意 MOVE 常规形态恒三参数（资产 dx dy），"
+                            "只有多实例才写 k" % str(e)[:240])
+                        print("dream.world: burst 展开/生成失败→丢弃重试：%s"
+                              % str(e)[:120], file=sys.stderr)
+                        continue
                     # 信令扫描（复用初始 burst 后的同款判定）
                     pv, ov = _check_signals()
                     if ov is not None:
