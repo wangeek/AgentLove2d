@@ -211,8 +211,8 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     try:
                         got = gen_burst(drv, messages, a, len(frames_all),
                                         a.burst, note, chatlog, state)
+                        room_frames = len(got)   # 先记数（except 的 del 用）
                         _append_stream(got, first_ev=ef)
-                        room_frames += len(got)
                         # LLM 响应全文上控制台（逐帧）
                         for no, rows in got:
                             print("LLM 帧 %d（%d 行）：" % (no, len(rows)),
