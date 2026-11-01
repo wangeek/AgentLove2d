@@ -97,7 +97,10 @@ def scan_signals(frames):
 
 
 def run_rooms(a, drv, kit_rows, chatlog):
-    """房间状态机（可 headless：不起 Runner，纯生成+流产出）。"""
+    """房间状态机（可 headless：不起 Runner，纯生成+流产出）。
+
+    返回 (n, s, frames_all)——frames_all=全 run 词汇面帧（run_rooms 内部
+    保证每帧已 append 进 .fr，收尾不再全量重写）。"""
     n, s = 0, 0
     frames_all = []          # 全 run 帧（词汇面）——流产出用
     stream_len = 0
@@ -305,12 +308,9 @@ def main(argv=None):
     # write_session 全量重写——空会话头后改为 append 模式由 _append_stream 续写
     n, s, frames = run_rooms(a, drv, kit_rows, chatlog)
 
-    # 收尾：全文重 seal（含正确 head）+ lint + 判据
-    canon, _exp, dcrcs = dsession.resolve_frames(frames)
-    entries = dsession.seal_frames(canon, kit_rows, a.dt, dcrcs)
-    text = dsession.write_session(
-        dsession.build_session(entries, seed=a.seed, width=a.width,
-                               height=a.height, has_same=True), a.out)
+    # 收尾：lint 全文 + 判据（帧已逐 burst append 进 .fr——不再全量重写，
+    # 否则中途 append 的帧会被旧状态覆盖——用户手跑实测流回退到 12 帧）
+    text = open(a.out, encoding="utf-8").read()
     diags = fr_lint.lint_text(text, dream=True)
     for d in diags:
         print("lint:", d, flush=True)
