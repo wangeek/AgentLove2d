@@ -1,4 +1,4 @@
-# dream/world.py
+﻿# dream/world.py
 """无限流地牢 world runner（M2+）。
 
 用户规则（2026-11-01 拍板）：
@@ -277,6 +277,10 @@ def main(argv=None):
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--max-retry", type=int, default=2)
+    ap.add_argument("--max-idle", type=float, default=10.0,
+                    help="静默超时（秒）：无事件且 Runner 无渲染")
+    ap.add_argument("--max-total", type=float, default=600.0,
+                    help="整局总时长上限（秒）")
     ap.add_argument("--love", default=os.path.join(
         _ROOT, "megasource", "build115", "love", "Release", "love.exe"))
     ap.add_argument("--chatlog", default="")

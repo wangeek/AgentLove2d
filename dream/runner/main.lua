@@ -9,7 +9,6 @@ local evq = os.getenv("FR_EVQ") or (stream .. ".evq")
 local dbg = os.getenv("FR_RUNNER_DBG")
 local inject_path = os.getenv("FR_EV_INJECT")
 local inject_off = 0
-local pending_inject = {}   -- 首帧前缓存的注入事件
 
 local cur_frame = -1
 local ev_no = 0
@@ -43,7 +42,8 @@ local function report(ev, args)
 	end
 end
 
--- 注入行 → love.event.push（首帧前缓存）
+-- 注入行 → love.event.push（事件队列独立于渲染，无需等首帧；
+-- frame 上报以当前已渲染帧为准，pre-frame 事件 frame=-1 由消费方处理）
 local function push_inject_line(line)
 	local toks = {}
 	for t in line:gmatch("%S+") do
@@ -63,13 +63,8 @@ local function push_inject_line(line)
 			args[#args + 1] = v
 		end
 	end
-	if cur_frame < 0 then
-		pending_inject[#pending_inject + 1] = { toks[1], args }
-		mark("inject buffered (pre-frame): " .. line)
-	else
-		mark("inject push " .. line)
-		love.event.push(toks[1], unpack(args))
-	end
+	mark("inject push " .. line)
+	love.event.push(toks[1], unpack(args))
 end
 
 local function poll_inject()
@@ -92,14 +87,6 @@ local function poll_inject()
 	for line in data:gmatch("[^\n]+") do
 		push_inject_line(line)
 	end
-	-- 首帧已渲染：缓存的事件按序 flush 进事件队列
-	if cur_frame >= 0 and #pending_inject > 0 then
-		for _, ev in ipairs(pending_inject) do
-			mark("inject flush " .. ev[1])
-			love.event.push(ev[1], unpack(ev[2]))
-		end
-		pending_inject = {}
-	end
 end
 
 function love.load()
@@ -113,6 +100,9 @@ end
 
 function love.draw()
 	local r = love.graphics._frOfflineAppend(stream)
+	if dbg then
+		mark("draw r=" .. tostring(r))
+	end
 	if r == -2 then
 		mark("parse-error quit")
 		io.stderr:write("fr-iact: 解析错误，退出\n")
