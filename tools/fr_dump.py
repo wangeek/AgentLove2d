@@ -32,7 +32,8 @@ def _load(path):
         raw = f.read()
     if raw[:4] == fs.MAGIC:
         return fs.parse_binary(raw)
-    return fs.parse_text(raw.decode("utf-8"))
+    # CRLF 容忍（fr-as 同规矩：读入即归一 LF——Windows write_text 产 CRLF）
+    return fs.parse_text(raw.decode("utf-8").replace("\r\n", "\n"))
 
 
 def _filter_frames(s, spec):

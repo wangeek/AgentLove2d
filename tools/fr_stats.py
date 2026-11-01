@@ -32,7 +32,7 @@ _DEFAULTS = {
 
 def profile(path):
     """流 → 剖面 dict（op 层 + 参数层；_frames 供量化/时间层复用）。"""
-    text = open(path, "rb").read().decode("utf-8")
+    text = open(path, "rb").read().decode("utf-8").replace("\r\n", "\n")  # CRLF 容忍
     sess = fs.parse_text(text)
     ops = {}
     frames_out = []  # 每帧 [(op, fields)]（仅 out op）

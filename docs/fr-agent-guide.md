@@ -164,3 +164,21 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 | fr_assets | 流抽资产 kit / 从文件建 kit | `-o` `--from-files` |
 | fr_prec | :px↔:full 精度档转换 | |
 | fr_delta_check | 增量流对拍（Tier1 展开 etc.） | |
+| fr_diff | 两流帧对齐 diff（首分歧帧+行级差异） | `--frames a-b` `--first-only` |
+
+## 9. MCP 工具面（agent 直调）
+
+以上工具已包成 MCP 服务（`tools/fr_mcp.py`，零依赖 stdio JSON-RPC；工作区 `.mcp.json` 已注册
+`fr-tools`）——agent 不必 shell 拼命令，直接工具调用：
+
+| MCP 工具 | 底层 | 备注 |
+|---|---|---|
+| `fr_record` | love.exe + FR_CAPTURE env | sha 自动算；headless 确定性录制 |
+| `fr_read` | fr_dump | frames 选帧视图；响应封顶 100KB |
+| `fr_grep` | fr_dump + 行过滤 | 帧头上下文保留——"哪些帧画了 X" |
+| `fr_check` | fr_check | 判据文件路径或仅内置校验 |
+| `fr_stats` | fr_stats | 四层剖面 |
+| `fr_diff` | fr_diff | 首分歧帧（bisect 语义）+ 行 diff |
+
+设计约束（fr-rationale §五）：只流通文本与数字（行/矩形/CRC/计数），不流通图像字节；工具
+无状态，状态全在流与判据文件里。

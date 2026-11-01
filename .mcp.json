@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fr-tools": {
+      "command": "python",
+      "args": ["tools/fr_mcp.py"]
+    }
+  }
+}

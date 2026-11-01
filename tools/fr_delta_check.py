@@ -146,8 +146,9 @@ def main(argv):
               file=sys.stderr)
         return 2
     import tools.fr_session as fs
-    s = fs.parse_text(open(args.input, "rb").read().decode("utf-8"))
-    text = open(args.input, "rb").read().decode("utf-8")
+    raw_txt = open(args.input, "rb").read().decode("utf-8").replace("\r\n", "\n")  # CRLF 容忍
+    s = fs.parse_text(raw_txt)
+    text = raw_txt
     r = expand_delta(text)
     r["prec"] = s.get("prec", "full")
     r["delta"] = s.get("delta", False)

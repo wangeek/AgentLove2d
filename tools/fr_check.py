@@ -62,7 +62,7 @@ def _builtin(raw, strict):
         if fs.dump_binary(s) != raw:
             fails.append("canonical 幂等失败（.frb）")
     else:
-        text = raw.decode("utf-8")
+        text = raw.decode("utf-8").replace("\r\n", "\n")  # CRLF 容忍（fr-as 同规矩）
         s = fs.parse_text(text)
         if fs.dump_text(s) != text:
             fails.append("canonical 幂等失败（.fr）")
