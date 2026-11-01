@@ -4,6 +4,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 
 ## 真源文件（动手前先读）
 
+- **`docs/fr-agent-guide.md`** — **Agent 使用手册（观察/调试/验证 LÖVE 游戏的端到端路径）**：接入录制（env 表）→ 观察工具 → 锚行 diff 定位法 → 判据文件格式（CHECK/CHECK-NEXT/CHECK-NOT）→ 回归循环 → 剑侠 worked example。新 agent/新会话从这本进
 - `docs/design.md` — **总纲入口**：系统全貌、一帧的一生、机制卡、工具族地图、实施路线——新会话从这里进，再按其 §0 读者地图跳真源
 - `docs/fr-rationale.md` — **动机总纲**：FR 为 Agent 图形化验证而设计的推理链、五条设计原则、Agent 工作流、MCP 工具预留接口面
 - `docs/fr-spec.md` — FR 规格（现行 v1.4，以 §13 版本记录为准）：段语义、级别三档、命令集、事件词汇表、工具族、取证清单
