@@ -1,4 +1,4 @@
-# M2 交互式 dream：ev 事件驱动生成（设计定稿）
+﻿# M2 交互式 dream：ev 事件驱动生成（设计定稿）
 
 > 状态：**设计定稿，虚拟验证完毕（2026-11-01 三轮 ev 实验），待实施交互式 Runner**。
 > 上游：B18 dream runner M1（docs/plans/2026-10-30-b18-dream-runner-design.md）、
@@ -77,7 +77,7 @@ chat/chatlog、判据面（fr_check --strict / lint）照旧全链有效。
 
 ## 6. 实施任务（TDD）
 
-- T1 LÖVE 侧：interactive 回放模式（详细设计见 §8；C++ ~120 行）。
+- T1 LÖVE 侧：`_frOfflineAppend`/`_frOfflineFrame` 两个 Lua 入口（§9；C++ ~110 行）。
 - T2 Python 侧：dream/loop.py——子进程管理 + 协议 + 生成循环复用
   （~150 行；--ev 逻辑从 run.py 抽取共用）。
 - T3 联调判据：脚本化会话（预排 ev 序列）→ 全链 lint/check → 成片目检
@@ -90,68 +90,37 @@ chat/chatlog、判据面（fr_check --strict / lint）照旧全链有效。
 - 多观众并发事件合并（v1 单事件队列顺序处理）；
 - 触摸/摇杆 type 扩充（词汇表已留参数序位，按需加行）。
 
-## 8. T1 详细设计：LÖVE interactive 回放模式（fr_capture.cpp）
+## 9. 拓扑修订（定案，取代 §3/§4 的 stdio 设计与 §8 的 C++ SDL 轮询）
 
-> 侦察基线：`fr_offline_replay`（fr_capture.cpp:2573 起）现为一次 fread 全量
-> → offline_parse_text → `for (fi...)` 一遍到底；g_fr_play 分支（:2650）已有
-> SDL_PumpEvents/PollEvent 循环（现只认 QUIT）与 dt 节奏贴屏 present。
-
-### 8.1 开关与零侵入
-
-`FR_INTERACTIVE=1`（父进程注入；与 FR_PLAY 同族）。**未设时全部新逻辑不执行，
-行为与现状逐字节一致**（判据回归锚）。interactive 隐含 FR_PLAY（视觉播放是
-交互前提），复用其贴屏/present/sleep 分支。
-
-### 8.2 流增长感知：增量解析
-
-- `OfflineSession` + `buf` + `size_t parse_tail`（已解析到的偏移）提升到
-  循环外持久；文件句柄保持打开。
-- 轮询：每次 starved 周期 `fseek(SEEK_END)/ftell` 比对已读偏移，增长则
-  fread 增量 append；**只解析到最后一个 '\n'**（父进程写半行安全），残段
-  留待下轮；帧号连续校验改用 `s.frames.size()` 基（head 行仅 offset 0 解析）。
-- offline_parse_text 拆出 `offline_parse_text_more(buf, from, s)` 续解析入口。
-
-### 8.3 主循环：starved 等待
+> 2026-11-01 用户裁决四原则：① 事件由 Lua 捕获（非 C++ 轮询/脚本注入）；
+> ② 日志照旧关注 LLM 对话；③ 末帧反复绘制可接续新 ev、但空闲不增帧
+> （控制上下文长度）；④ patch 不侵入游戏框架——Runner 是延伸出的完整程序。
+> 洞察：**Runner 本身就是一个微型 LÖVE 游戏目录**（`love.exe dream/runner`），
+> 框架零侵入。
 
 ```
-fi = 0
-for (;;):
-  if fi >= s.frames.size():
-      协议出 {"status":"starved","frame":fi}
-      循环等待（不 dt sleep）: 轮询文件增长 + stdin + SDL pump（保窗活）
-      新帧 → 继续；stdin quit / 关窗 → break
-  执行帧 fi（exec rows → 贴屏 present，复用 g_fr_play 分支）→ D_CRC 判据行照出 → fi++
+dream/loop.py（Python）              love.exe dream/runner/（Runner 游戏）
+├─ LLM driver/seal/chatlog 复用      ├─ conf.lua：窗口=流几何，标题 dream-runner
+├─ 生成初始段 .fr → 起 love 子进程    ├─ love.mousepressed 等（Lua 捕获 ev）
+├─ 轮询 .evq → 事件→LLM→追加帧      │    → JSON 行 append 到 .evq（io）
+└─ 子进程退出/超时 → 收尾判据        ├─ love.draw 每帧调 _frOfflineAppend(path)
+                                     │    （C++ 增量：探测增长→续解析→按 dt 节奏
+                                     │     渲染新帧到常驻 canvas→贴屏）
+                                     └─ 空闲：无新帧只贴屏（末帧反复绘制，
+                                        流不增帧；ev 随时可到）
 ```
 
-### 8.4 stdin 协议（非阻塞）
+- **通道=两个文件**：.fr（Python→Runner，append-only）、.evq（Runner→Python，
+  JSON 行）；无 stdio 协议、无端口。子进程只上报事实，不写流。
+- **C++ 增量仅两个 Lua 入口**（加法式，~110 行）：
+  `love.graphics._frOfflineAppend(path)` → 常驻 OfflineSession+canvas+解析偏移；
+  每次 call：文件增长则续解析（只到最后一个 '\n'）、按流内 dt 节奏至多推进
+  一帧、canvas 贴屏缩放。`_frOfflineFrame()` → 当前渲染帧号（ev 上报用）。
+- **ev 由 Lua 捕获**：love.mousepressed(x,y,button,istouch) →
+  `{"ev":...,"args":[x,y,button,istouch],"frame":_frOfflineFrame()}`。
+  坐标 1:1（窗口=流几何）。
+- **测试自动化**：窗口标题定位 hwnd → ctypes SendMessage(WM_LBUTTONDOWN/UP)
+  合成点击（SDL 翻译为 love 事件）；断言 .fr 含 ev 行 + 事件帧后有绘制响应
+  （帧内容 diff）+ chatlog 含【事件】回合。
+- **生命周期**：关窗/Python 超时即会话终；.fr 保留全部打断事实（回放=复刻）。
 
-- Windows：`PeekNamedPipe(GetStdHandle(STD_INPUT_HANDLE))` 探可读字节再读行；
-  POSIX：`poll(fd=0)`。`#ifdef _WIN32` 双路（fork 实际只跑 Windows）。
-- 入：`{"quit":true}`（干净退出）。`{"append":N}` 保留为显式踢（轮询为主，
-  踢为辅——降低轮询间隔压力）。
-- **通道复用 stdout，按行前缀分流**：`D_CRC ...` = 判据（现状不变），
-  `{...}` = 协议。父进程按行前缀路由。零新通道，chatlog 不受扰。
-- JSON 手写拼串（消息形态固定，不引库）。
-
-### 8.5 ev 上报（SDL → 协议行）
-
-- g_fr_play 的 PollEvent 循环扩展：`SDL_MOUSEBUTTONDOWN/UP`、`SDL_KEYDOWN`。
-  - mouse：`e.button.x/y`，button 映射 SDL_BUTTON_LEFT→1 等（love 口径），
-    istouch 恒 0 → `{"ev":"mousepressed","args":[x,y,1,0],"frame":fi}`
-  - key：keysym.sym → 键名（love 键名口径，demo rig B5 的映射若在 C 侧
-    则复用；否则小映射表起步：字母/数字/空格/回车/方向键）
-- **子进程不写流**——.fr 归父进程；ev 行由父进程 seal 落流（Python 侧
-  已验证的双写）。子进程只上报事实。
-- 离线回放不走 love run loop，SDL 直 Poll 是正确的层（与 g_fr_play 同构）。
-
-### 8.6 生命周期与验收
-
-- 末帧不再"停 1s 退出"（FR_PLAY 现状）——interactive 进 starved 循环，
-  直到 stdin quit 或关窗（关窗=quit 同义，进程组清理走现状路径）。
-- 验收（T1 独立，父侧用 stub 脚本）：
-  1. 预生成 .fr + FR_INTERACTIVE=1 起：播到末帧 → stdout 出 starved；
-  2. stub 往 .fr append 帧（模拟 LLM 产出）→ 窗口续播、D_CRC 连号；
-  3. 点击窗口 → stdout 出 ev JSON（坐标=点击处，frame=当前渲染帧）；
-  4. stdin `{"quit":true}` → 干净退出 rc=0；
-  5. 回归：FR_INTERACTIVE 未设 → 现有判据全量绿（零侵入验证）。
-- 回归挂 tests/test_interactive.py（T3 一并），构建走 megasource 增量。
