@@ -213,6 +213,16 @@ def run_rooms(a, drv, kit_rows, chatlog):
                                         a.burst, note, chatlog, state)
                         _append_stream(got, first_ev=ef)
                         room_frames += len(got)
+                        # LLM 响应全文上控制台（逐帧）
+                        for no, rows in got:
+                            print("LLM 帧 %d（%d 行）：" % (no, len(rows)),
+                                  flush=True)
+                            for op, f in rows:
+                                try:
+                                    print("  %s" % _rc.render_line_px(op, f),
+                                          flush=True)
+                                except ValueError:
+                                    print("  %s %r" % (op, f), flush=True)
                     except ValueError as e:
                         # 展开失败（对象寻址未配对/参数错）→ 丢整个 burst
                         # 打回重试——不炸整局（world 鲁棒性）
