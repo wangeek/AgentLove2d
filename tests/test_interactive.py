@@ -229,4 +229,4 @@ def test_interactive_sendmessage(tmp_path, monkeypatch):
     assert "CI 1 320 300" in text[idx:], "事件后无绘制响应"
     # ③ chatlog 记录了事件注入与对话
     chat = clog.read_text(encoding="utf-8")
-    assert "【事件】" in chat and "SYSTEM" in chat and "DONE" in chat
+    assert "【用户操作】" in chat and "SYSTEM" in chat and "DONE" in chat

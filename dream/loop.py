@@ -219,7 +219,7 @@ def main(argv=None):
             if evs:
                 ef = ev_fields(evs)
                 ev_rows_txt = "\n".join(_rc.render_line_px("ev", e) for e in ef)
-                note = ("\n【事件】事件行在本 chunk 首帧的 in 段（runner 将插入）：\n"
+                note = ("\n【用户操作】发生了用户操作事件，注意是否需要给予反馈：\n"
                         + ev_rows_txt)
                 _log(chatlog, "EVENT（Runner 上报）", ev_rows_txt)
                 got = gen_burst(drv, messages, a, len(frames), a.burst,
