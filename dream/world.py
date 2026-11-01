@@ -227,10 +227,13 @@ def run_rooms(a, drv, kit_rows, chatlog):
                                 except ValueError:
                                     print("  %s %r" % (op, f), flush=True)
                     except ValueError as e:
-                        # 展开失败（对象寻址未配对/参数错）→ 丢 burst 重建
-                        # 会话打回。feedback 必须点名错误（否则 LLM 原样重写
-                        # → 死循环，实测 TURN 5-38 同两组帧循环 34 次）
-                        del frames_all[room_start + room_frames:]
+                        # 展开失败（对象寻址未配对/参数错）→ 已追加帧回滚
+                        # （流与 frames_all 同步回退——只回退本 burst 已写入
+                        # 的帧；_append_stream 逐 burst 追加，回滚=重写至
+                        # room_start+room_frames 前缀）。feedback 点名错误。
+                        bad = len(frames_all) - (room_start + room_frames)
+                        if bad > 0:
+                            del frames_all[-bad:]
                         messages[:] = messages[:1]
                         state["last_feedback"] = (
                             "上次输出被拒：%s——修正后重出。常见原因："
