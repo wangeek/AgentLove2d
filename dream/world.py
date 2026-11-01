@@ -1,4 +1,4 @@
-﻿# dream/world.py
+# dream/world.py
 """无限流地牢 world runner（M2+）。
 
 用户规则（2026-11-01 拍板）：
@@ -109,6 +109,9 @@ def run_rooms(a, drv, kit_rows, chatlog):
     state = {"turn_seq": 0, "last_feedback": ""}
     evq = a.out + ".evq"
     evinj = a.out + ".evinj"
+    t_total = time.time() + a.max_total
+    last_event = time.time()      # 最近事件时刻（idle 判定基准）
+    last_idle_stream = 0          # 上轮 idle 检查时的流帧数（增长=活性）
 
     def _append_stream(new_frames, first_ev=None):
         """新帧 → 流 append。展开失败（对象寻址未配对等）抛 ValueError，
@@ -202,6 +205,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     n += 1
                     break
                 if evs:
+                    last_event = time.time()
                     ef = ev_fields(evs)
                     ev_rows_txt = "\n".join(
                         _rc.render_line_px("ev", e) for e in ef)
@@ -214,8 +218,9 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     try:
                         got = gen_burst(drv, messages, a, len(frames_all),
                                         a.burst, note, chatlog, state)
-                        room_frames = len(got)   # 先记数（except 的 del 用）
+                        frames_all += got   # 并入（_append_stream 的 resolve 依赖）
                         _append_stream(got, first_ev=ef)
+                        room_frames = len(frames_all) - room_start
                         # LLM 响应全文上控制台（逐帧）
                         for no, rows in got:
                             print("LLM 帧 %d（%d 行）：" % (no, len(rows)),
@@ -256,6 +261,19 @@ def run_rooms(a, drv, kit_rows, chatlog):
                         break
                 elif not a.headless:
                     time.sleep(0.2)
+                    # 收尾闸 1：整局总时长（防无界跑——用户实测 20 分钟不停）
+                    if time.time() > t_total:
+                        print("dream.world: 总时长上限（%.0fs）→收尾"
+                              % a.max_total, flush=True)
+                        break
+                    # 收尾闸 2：静默超时——活性=事件或流帧增长（stream_len
+                    # 变化）；Runner 空闲重绘不算（dbg 一直在涨会假活）
+                    if time.time() - last_event > a.max_idle \
+                            and stream_len == last_idle_stream:
+                        print("dream.world: 静默超时（%.0fs 无事件且流无新帧）"
+                              "→收尾" % a.max_idle, flush=True)
+                        break
+                    last_idle_stream = stream_len
     finally:
         if proc is not None:
             try:

@@ -12,7 +12,7 @@ sleep 1
 
 python -m dream.world --llm --out dream/run_ds.fr --kit dream/kit_heroes \
   --rooms-max 999 --frames-initial 12 --frames-per-room 900 \
-  --burst 6 --chunk-frames 3
+  --burst 6 --chunk-frames 3 2>&1 | tee _world_stdout.txt &
 LOOP_PID=$!
 
 EVINJ=""
@@ -37,13 +37,13 @@ for i in $(seq 1 450); do
 done
 sleep 3
 
-# 玩家操作：方向键 + 跳跃 + 空格交互（按键名按 love 口径）
+# 玩家操作：全局方向键（vocab 第 10 条——移动/跳跃/交互全映射方向键）
 inject() { echo "keypressed $1 0" >> "$EVINJ"; echo "keyreleased $1 0" >> "$EVINJ"; }
 
 inject right; sleep 2; inject right; sleep 2
-inject space; sleep 1; inject right; sleep 2
-inject right; sleep 2; inject d; sleep 3        # 'd' 常用作交互/拾取键
-inject right; sleep 2; inject space; sleep 2
+inject up;    sleep 1; inject right; sleep 2      # up=跳跃/交互
+inject right; sleep 2; inject up; sleep 3
+inject right; sleep 2; inject down; sleep 2       # down=交互/拾取
 inject left;  sleep 1; inject right; sleep 3
 
 wait $LOOP_PID || true
