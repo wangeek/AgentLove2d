@@ -121,10 +121,13 @@ def gen_burst(drv, messages, a, base_frame, n_want, ev_note, chatlog, state):
             got += chunk
             retry, feedback = 0, ""
         except (ValueError, RuntimeError) as e:
-            del messages[base:]
+            # 失败样本保留进历史（LLM 看到自己错在哪——删掉它会原样重犯，
+            # 渔舟/地牢实测死循环根因）；feedback user 追加在失败之后
             retry += 1
             feedback = "上次输出被拒：%s——请逐 token 对照词汇表检查每行的参数个数后重出" \
                        % str(e)[:300]
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": feedback})
             if retry > a.max_retry:
                 raise RuntimeError("burst 重试上限：%s" % e) from None
     state["last_feedback"] = feedback

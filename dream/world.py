@@ -224,14 +224,16 @@ def run_rooms(a, drv, kit_rows, chatlog):
                                 except ValueError:
                                     print("  %s %r" % (op, f), flush=True)
                     except ValueError as e:
-                        # 展开失败（对象寻址未配对/参数错）→ 丢整个 burst
-                        # 打回重试——不炸整局（world 鲁棒性）
+                        # 展开失败（对象寻址未配对/参数错）→ 丢 burst 重建
+                        # 会话打回。feedback 必须点名错误（否则 LLM 原样重写
+                        # → 死循环，实测 TURN 5-38 同两组帧循环 34 次）
                         del frames_all[room_start + room_frames:]
-                        messages[:] = messages[:1]   # 会话重建（干净重试）
-                        state["last_feedback"] = ("上次 burst 被拒：%s——"
-                            "注意 MOVE 常规形态恒三参数（资产 dx dy），"
-                            "只有多实例才写 k" % str(e)[:240])
-                        print("dream.world: burst 展开/生成失败→丢弃重试：%s"
+                        messages[:] = messages[:1]
+                        state["last_feedback"] = (
+                            "上次输出被拒：%s——修正后重出。常见原因："
+                            "MOVE 常规形态恒三参数（资产 dx dy，多实例才写 k）；"
+                            "每帧行必须完整（色值 4 分量不可缺）" % str(e)[:240])
+                        print("dream.world: burst 失败→丢弃重建会话重试：%s"
                               % str(e)[:120], flush=True)
                         continue
                     # 信令扫描（复用初始 burst 后的同款判定）
