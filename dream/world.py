@@ -1,4 +1,4 @@
-﻿# dream/world.py
+# dream/world.py
 """无限流地牢 world runner（M2+）。
 
 用户规则（2026-11-01 拍板）：
@@ -205,6 +205,9 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     note = ("\n【用户操作】发生了用户操作事件，"
                             "注意是否需要给予反馈：\n" + ev_rows_txt)
                     _log(chatlog, "EVENT（Runner 上报）", ev_rows_txt)
+                    print("EVENT %s（frame %s）——已注入提示词"
+                          % (ev_rows_txt.replace("\n", " | "),
+                             ef[0].get("frame", "?")), flush=True)
                     try:
                         got = gen_burst(drv, messages, a, len(frames_all),
                                         a.burst, note, chatlog, state)

@@ -12,8 +12,7 @@ sleep 1
 
 python -m dream.world --llm --out dream/run_ds.fr --kit dream/kit_heroes \
   --rooms-max 999 --frames-initial 12 --frames-per-room 900 \
-  --burst 6 --chunk-frames 3 \
-  > _world_stdout.txt 2> _world_err.txt &
+  --burst 6 --chunk-frames 3
 LOOP_PID=$!
 
 EVINJ=""
