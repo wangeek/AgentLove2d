@@ -33,11 +33,12 @@ from tools import fr_lint
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def frame_block_text(no, dt, ev_rows, rows, dcrc):
-    """追加帧块文本（行序=seal_frames：dt→ev→rows→s_crc→d_crc；:px 形）。"""
+def frame_block_text(no, dt, ev_rows, rows, dcrc, asset_rows=()):
+    """追加帧块文本（行序=seal_frames：dt→ev→asset(可选,首帧)→rows→end）。"""
     out = ["frame %d" % no]
     seq = [("dt", {"val": dt})]
     seq += [("ev", e) for e in ev_rows]
+    seq += list(asset_rows)
     seq += rows
     seq += [("s_crc", {"crc": 0}), ("d_crc", {"crc": dcrc})]
     for op, f in seq:
