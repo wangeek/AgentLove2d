@@ -198,6 +198,20 @@ slembcke 侧（纯 Lua 层的坑与技巧，fr-trace/L0 直接受用）：
 
 处置规则〔定案：语义替代而非禁用，D8-5〕：A 类在 fork 中保留原名原签名，实现替换为 CPU 侧注册（校验实参 → 登记 asset 行 → 返回资产代理对象，代理携带 u32 资产号供 draw 捕获时解析）；newQuad 一并去守卫化（纯数据注册，内核根本不用调也行——quad 本就是 asset 行数据）；B 类不接管、数据行化；无 IR 对应的 A 类成员（newShader/newVideo/newMesh 等）暂记 err 行，按频度增补。live 与 headless 共用同一替代实现，差异只在渲染端有无 GL；渲染端物化 = 首次引用时 uploadImageData。
 
+## 附录 B：M2 交互式增量回放挂点（2026-11-01，B18-M2a）
+
+§一 六挂点之外的新增面——Runner 游戏的渲染后端（零侵入：未设环境时行为与现状逐字节一致）：
+
+| 挂点 | 事实 | 实现 |
+|---|---|---|
+| `love.graphics._frOfflineAppend(path)` | Lua 每帧调（Runner 的 love.draw） | C++ `fr_offline_append`：文件增长探测（fseek END/ftell 对比 file_off）→ 增量 fread → **只解析到最后一个 '\n'**（写半行安全）→ 帧号连续校验 → 按**流内 dt** 至多推进一帧（渲染到常驻 canvas）→ canvas 贴屏；空闲=末帧反复绘制、流不增帧（两轴模型的渲染轴） |
+| 续解析核 `offline_parse_lines` | offline_parse_text 的逐行循环抽出为独立函数（状态外提：in_frame/delta_rows/cur_frame_idx 由调用方持有） | 支持跨调用续解析；**d_crc 行=帧块闭合**：此处冲刷积压增量（M2 交互必需——末帧渲染不等下一帧头） |
+| `FrIact` 状态 | header_done/buf/file_off/parsed_lines/OfflineSession/canvas/rendered | 单例跨调用持久；dt 下限 1/60（播放给人看） |
+
+实测（2026-11-01）：`_grow` 探针（2 帧流 starved 后 append 2 帧空 r 推进）与手喂实验（真实 3.1MB dream 流含 SET×86，starved 后手写 C/R 帧块，r 35→37）均过——增量消化与增量行展开在暂停后正常。已知边界：流被外部截短/重写时 Runner 重解析跳回（append-only 纪律由 Python 侧保证，见 world runner 教训）。
+
+配套 Lua 侧（dream/runner/，不入 fork）：ev 捕获（love.mousepressed/keypressed→.evq JSON 行）、FR_EV_INJECT 注入通道（love.event.push 正规队列）。详 docs/plans/2026-11-01-m2-interactive-dream.md §9。
+
 ## 附录：v1 仍成立的事实
 
 - **版本对齐**：素材源码已 checkout 官方 11.5 tag（`6eb8d54`），与锁定运行时同版本——内部实现取证一律以此为准。
