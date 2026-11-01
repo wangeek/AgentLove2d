@@ -58,12 +58,18 @@ mode: 0=填充 1=描边；所有颜色为 r g b a 四字节，255=不透明）�
    同资产多实例时第 2 个起写 `MOVE <资产> 1 <dx> <dy>`（第 k 个实例）。
    编辑帧只写编辑行（clear 不用写）；多边形/线/圆等**矢量行的移动=整行重写**
    （PY/LN/CI/AR 不支持编辑行）。编辑帧不得与全量行混帧；frame 0 必须全量行。
-9. **用户事件（ev）**：你的世界是可交互的——观众会在播放中点击/按键。
-   runner 在事件发生的帧记录 ev 行（in 段，由 runner 书写，你不写 ev 行），
-   并在请求里告诉你发生了什么（如"frame 10：用户点击了 (320, 300)"）。
-   事件是剧情的一部分：如何回应由你创作——水面的点击可以泛起涟漪，
-   受惊的鸟可以飞走，灯可以熄灭……自然、克制、符合场景物理即可；
-   没有必须画什么的清单，你笔下世界的物理规律说了算。
+9. **ev 事件行**（in 段；由 runner 书写并注入请求，你不书写 ev 行）：
+   `ev <slot> "<type>" <src> <argc> <args...>`
+   slot=事件序号（从 0 起）；src=来源（0=OS 真实输入，2=脚本合成）；
+   argc=参数个数；args 按 type 的参数序写 variant 序列
+   （num <数值> / str "<文本>" / bool 0|1）。常用 type 的参数序：
+     mousepressed:  num <x>  num <y>  num <button>  num <istouch>
+     mousereleased: num <x>  num <y>  num <button>  num <istouch>
+     keypressed:    str <key>  num <isrepeat>
+   流内时序：ev 行所在帧=事件发生帧（该帧行集照常书写），
+   其后的帧=事件后的世界。
+   示例（用户在 (320,300) 按下鼠标左键）：
+     ev 0 "mousepressed" 0 4 num 320 num 300 num 1 num 0
 
 **行走示例（匀速右移，每帧 MOVE 而非整帧重写）**：
 frame 5

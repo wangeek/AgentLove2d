@@ -46,12 +46,22 @@ def _chatlog_sanitize(text):
 
 
 def _parse_ev(spec):
-    """--ev "10:mousepressed 320 240" → (帧号, type, args 裸数列表)。"""
+    """--ev "10:mousepressed 320 300 1 0" → (帧号, type, args variant 列表)。
+
+    参数按 type 参数序全量给出；token 尽力 float→num 裸数，失败记 str 单元素
+    tuple（如 keypressed 的键名）。
+    """
     head, _, rest = spec.partition(":")
     toks = rest.split()
     if not toks:
         raise ValueError("--ev 缺 type: %r" % spec)
-    return int(head), toks[0], [float(t) for t in toks[1:]]
+    args = []
+    for t in toks[1:]:
+        try:
+            args.append(float(t))
+        except ValueError:
+            args.append((t,))
+    return int(head), toks[0], args
 
 
 def main(argv=None):
@@ -121,11 +131,10 @@ def main(argv=None):
             hit = [f for f in pending
                    if len(frames) <= f < len(frames) + n_left]
             if hit:
-                ev_note = "\n【用户事件】" + "；".join(
-                    "frame %d：%s(%s)。世界对它作何反应，由你创作"
-                    % (f, pending[f][0][1]["type"],
-                       ", ".join(str(int(v)) for v in pending[f][0][1]["args"]))
-                    for f in sorted(hit))
+                lines = [_rc.render_line_px(evf[0], evf[1])
+                         for f in sorted(hit) for evf in pending[f]]
+                ev_note = ("\n【事件】事件行在流中（你上一 chunk 之帧的 in 段，"
+                           "runner 已插入）：\n" + "\n".join(lines))
             messages.append({"role": "user", "content": dprompt.build_turn(
                 a.directive, len(frames), n_left, feedback) + ev_note})
             shown = messages[base]["content"]

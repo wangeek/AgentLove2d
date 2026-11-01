@@ -160,7 +160,7 @@ def test_ev_seal_order_and_roundtrip():
     blk = [e for e in entries if e[0] == "frame"][1][1]
     assert [op for op, _ in blk[:3]] == ["dt", "ev", "clear"]  # in 段行序
     text = fs.dump_text(ds.build_session(entries, seed=1))
-    assert 'ev 0 "mousepressed" 0 2 num 320.000000 num 240.000000' in text
+    assert 'ev 0 "mousepressed" 0 2 num 320 num 240' in text  # :px 值整即整
     # round-trip：parse 回来 ev 字段等价
     s2 = fs.parse_text(text)
     blk2 = [e for e in s2["entries"] if e[0] == "frame"][1][1]

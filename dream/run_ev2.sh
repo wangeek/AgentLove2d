@@ -11,7 +11,7 @@ DIRECTIVE='像素小剧场《渔舟》，36 帧。黄昏的湖面，一叶小舟
 
 python -m dream.run --frames 36 --out dream/dream_ev2.fr --llm \
   --kit dream/kit_heroes --chunk-frames 3 --directive "$DIRECTIVE" \
-  --ev "10:mousepressed 320 300"
+  --ev "10:mousepressed 320 300 1 0"
 
 echo '--- ev 行核验 ---'
 grep -n "^ev " dream/dream_ev2.fr
