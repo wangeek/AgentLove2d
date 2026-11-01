@@ -1,4 +1,4 @@
-# dream/world.py
+﻿# dream/world.py
 """无限流地牢 world runner（M2+）。
 
 用户规则（2026-11-01 拍板）：
@@ -166,20 +166,20 @@ def run_rooms(a, drv, kit_rows, chatlog):
                 diags = fr_lint.lint_text(text, dream=True)
                 if diags:
                     print("dream.world: 信令但 lint %d 条——不认" % len(diags),
-                          file=sys.stderr)
+                          flush=True)
                     return None, None
                 return pv, ov
 
             pv, ov = _check_signals()
             if ov is not None:
                 print("dream.world: RUN OVER（over=%d）——保存流" % ov,
-                      file=sys.stderr)
+                      flush=True)
                 return n, s, frames_all
             if pv is not None:
                 s += min(pv, 100)
                 n += 1
                 print("dream.world: room %d clear（pass=%d）→ n=%d S=%d"
-                      % (n, pv, n, s), file=sys.stderr)
+                      % (n, pv, n, s), flush=True)
                 continue
             deadline_frames = len(frames_all) + a.frames_per_room
             # —— room 内循环：事件 → burst → 信令/帧上限
@@ -187,7 +187,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
                 if not a.headless:
                     if proc.poll() is not None:
                         print("dream.world: Runner 退出（rc=%s）"
-                              % proc.returncode, file=sys.stderr)
+                              % proc.returncode, flush=True)
                         return n, s, frames_all
                     evs, evq_off = poll_evq(evq, evq_off)
                 else:
@@ -195,7 +195,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     evs = []
                 if len(frames_all) >= deadline_frames:
                     print("dream.world: room %d 帧数上限→下一房（本房 0 分）"
-                          % (n + 1), file=sys.stderr)
+                          % (n + 1), flush=True)
                     n += 1
                     break
                 if evs:
@@ -219,19 +219,19 @@ def run_rooms(a, drv, kit_rows, chatlog):
                             "注意 MOVE 常规形态恒三参数（资产 dx dy），"
                             "只有多实例才写 k" % str(e)[:240])
                         print("dream.world: burst 展开/生成失败→丢弃重试：%s"
-                              % str(e)[:120], file=sys.stderr)
+                              % str(e)[:120], flush=True)
                         continue
                     # 信令扫描（复用初始 burst 后的同款判定）
                     pv, ov = _check_signals()
                     if ov is not None:
                         print("dream.world: RUN OVER（over=%d）——保存流" % ov,
-                              file=sys.stderr)
+                              flush=True)
                         return n, s, frames_all
                     if pv is not None:
                         s += min(pv, 100)   # 上限封顶（防 LLM 超写）
                         n += 1
                         print("dream.world: room %d clear（pass=%d）→ n=%d S=%d"
-                              % (n, pv, n, s), file=sys.stderr)
+                              % (n, pv, n, s), flush=True)
                         break
                 elif not a.headless:
                     time.sleep(0.2)
@@ -267,7 +267,7 @@ def main(argv=None):
     ap.add_argument("--chatlog", default="")
     a = ap.parse_args(argv)
     if not a.llm:
-        print("dream.world: 无限地牢需 --llm", file=sys.stderr)
+        print("dream.world: 无限地牢需 --llm", flush=True)
         return 2
 
     drv = ddrv.LlmDriver()
@@ -294,14 +294,14 @@ def main(argv=None):
                                height=a.height, has_same=True), a.out)
     diags = fr_lint.lint_text(text, dream=True)
     for d in diags:
-        print("lint:", d, file=sys.stderr)
+        print("lint:", d, flush=True)
     _log(chatlog, "RUN DONE", "rooms=%d score=%d frames=%d" % (n, s, len(frames)))
     chatlog.close()
     print("dream.world: %d 房 / %d 分 / %d 帧 → %s（lint %s）"
           % (n, s, len(frames), a.out,
              "全绿" if not diags else "%d 条诊断" % len(diags)))
     if drv.usage_totals:
-        print("dream.world: usage %s" % drv.usage_totals, file=sys.stderr)
+        print("dream.world: usage %s" % drv.usage_totals, flush=True)
     return 0 if not diags else 1
 
 

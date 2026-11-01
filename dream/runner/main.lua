@@ -2,14 +2,14 @@
 -- 渲染：love.draw 每帧调 _frOfflineAppend（C++ 增量解析+dt 节奏+贴屏；
 --       空闲只贴屏——末帧反复绘制，流不增帧）
 -- 事件：Lua 捕获（love.handlers 正统层）→ JSON 行 append 到 .evq（io）
+-- 注入：FR_EV_INJECT 文件行 → love.event.push（首帧渲染前到达的事件先
+--       缓存，首帧后按序 flush——frame=-1 上报无意义）
 local stream = os.getenv("FR_STREAM") or "dream_session.fr"
 local evq = os.getenv("FR_EVQ") or (stream .. ".evq")
 local dbg = os.getenv("FR_RUNNER_DBG")
--- FR_EV_INJECT：脚本化事件注入通道（CI/测试用）——love.update 轮询该文件，
--- 每行 "type <arg>..." 经 love.event.push 进 love 事件队列（与 OS 输入同一
--- 管线：回调 Lua 捕获层全链被测；D14 双生产者的合成口径）。
 local inject_path = os.getenv("FR_EV_INJECT")
 local inject_off = 0
+local pending_inject = {}   -- 首帧前缓存的注入事件
 
 local cur_frame = -1
 local ev_no = 0
@@ -22,6 +22,53 @@ local function mark(msg)
 	if fh then
 		fh:write(msg .. "\n")
 		fh:close()
+	end
+end
+
+local function report(ev, args)
+	ev_no = ev_no + 1
+	local parts = {}
+	for _, v in ipairs(args) do
+		parts[#parts + 1] = tostring(v)
+	end
+	local line = string.format('{"no":%d,"ev":"%s","args":[%s],"frame":%d}',
+		ev_no, ev, table.concat(parts, ","), cur_frame)
+	local fh = io.open(evq, "a")
+	if fh then
+		fh:write(line, "\n")
+		fh:close()
+		mark("report wrote " .. line)
+	else
+		mark("report CANNOT OPEN " .. evq)
+	end
+end
+
+-- 注入行 → love.event.push（首帧前缓存）
+local function push_inject_line(line)
+	local toks = {}
+	for t in line:gmatch("%S+") do
+		toks[#toks + 1] = t
+	end
+	if not toks[1] then
+		return
+	end
+	local args = {}
+	for i = 2, #toks do
+		local v = toks[i]
+		if v == "true" or v == "false" then
+			args[#args + 1] = (v == "true")
+		elseif tonumber(v) then
+			args[#args + 1] = tonumber(v)
+		else
+			args[#args + 1] = v
+		end
+	end
+	if cur_frame < 0 then
+		pending_inject[#pending_inject + 1] = { toks[1], args }
+		mark("inject buffered (pre-frame): " .. line)
+	else
+		mark("inject push " .. line)
+		love.event.push(toks[1], unpack(args))
 	end
 end
 
@@ -43,44 +90,15 @@ local function poll_inject()
 	data = data:sub(1, last_nl)
 	inject_off = inject_off + last_nl
 	for line in data:gmatch("[^\n]+") do
-		local toks = {}
-		for t in line:gmatch("%S+") do
-			toks[#toks + 1] = t
-		end
-		if toks[1] then
-			local args = {}
-			for i = 2, #toks do
-				local v = toks[i]
-				if v == "true" or v == "false" then
-					args[#args + 1] = (v == "true")
-				elseif tonumber(v) then
-					args[#args + 1] = tonumber(v)
-				else
-					args[#args + 1] = v
-				end
-			end
-			mark("inject push " .. line)
-			love.event.push(toks[1], unpack(args))
-		end
+		push_inject_line(line)
 	end
-end
-
-local function report(ev, args)
-	mark("report enter " .. ev)
-	ev_no = ev_no + 1
-	local parts = {}
-	for _, v in ipairs(args) do
-		parts[#parts + 1] = tostring(v)
-	end
-	local line = string.format('{"no":%d,"ev":"%s","args":[%s],"frame":%d}',
-		ev_no, ev, table.concat(parts, ","), cur_frame)
-	local fh = io.open(evq, "a")
-	if fh then
-		fh:write(line, "\n")
-		fh:close()
-		mark("report wrote " .. line)
-	else
-		mark("report CANNOT OPEN " .. evq)
+	-- 首帧已渲染：缓存的事件按序 flush 进事件队列
+	if cur_frame >= 0 and #pending_inject > 0 then
+		for _, ev in ipairs(pending_inject) do
+			mark("inject flush " .. ev[1])
+			love.event.push(ev[1], unpack(ev[2]))
+		end
+		pending_inject = {}
 	end
 end
 
@@ -95,7 +113,6 @@ end
 
 function love.draw()
 	local r = love.graphics._frOfflineAppend(stream)
-	mark("draw r=" .. tostring(r))
 	if r == -2 then
 		mark("parse-error quit")
 		io.stderr:write("fr-iact: 解析错误，退出\n")
@@ -106,7 +123,6 @@ function love.draw()
 end
 
 function love.mousepressed(x, y, button, istouch)
-	mark("mousepressed " .. tostring(x) .. "," .. tostring(y))
 	report("mousepressed", { x, y, button, istouch and 1 or 0 })
 end
 
