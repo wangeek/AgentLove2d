@@ -333,10 +333,12 @@ def _unescape(s):
     return "".join(out)
 
 
-def _render_variant(v):
-    """variant → token 对：num <%.6f> / str "<引号串>" / bool 0|1。"""
+def _render_variant(v, px=False):
+    """variant → token 对：num <full %.6f / :px 值整即整> / str "<引号串>" / bool 0|1。"""
     tag, payload = _variant_tag_value(v)
     if tag == VARIANT_TAG_NUM:
+        if px:  # :px 档：值整即整（与 _px_f32 同律；解析侧 float() 双形兼容）
+            return ["num", _px_f32("num", payload)]
         return ["num", "%.6f" % qf(payload)]
     if tag == VARIANT_TAG_STR:
         return ["str", '"' + _esc(payload) + '"']
@@ -628,8 +630,20 @@ def render_line_px(op, fields):
         spec = _BY_OP[op]
     except KeyError:
         raise ValueError("未知 op: %r" % op) from None
-    if op == "asset" or spec["variadic"]:
-        return render_line(op, fields)  # 段行/变长行：px 档与 full 同形
+    if op == "asset" or spec["variadic"] == "payload...":
+        return render_line(op, fields)  # 资产行：px 档与 full 同形
+    if spec["variadic"] == "args...":
+        # ev/call 等变长行：固定字段同 full（整数/字符串，无浮点），args 的
+        # variant num 走 :px 值整即整（B18 M2：事件行整数形态，num 320 非
+        # num 320.000000——解析侧 float() 双形兼容，full 档渲染不变）
+        toks = [_PX_SHORT.get(op, op)]
+        for name, typ in spec["fields"]:
+            toks.extend(_render_tok(typ, fields[name]))
+        args = fields["args"]
+        toks.append(str(len(args)))
+        for v in args:
+            toks.extend(_render_variant(v, px=True))
+        return " ".join(toks)
     omit = _PX_OMIT.get(op, ())
     # 尾部省略：从最后一个字段往前，命中省略表默认即砍，遇非默认/出表即断
     keep = dict(fields)
