@@ -169,16 +169,18 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 ## 9. MCP 工具面（agent 直调）
 
 以上工具已包成 MCP 服务（`tools/fr_mcp.py`，零依赖 stdio JSON-RPC；工作区 `.mcp.json` 已注册
-`fr-tools`）——agent 不必 shell 拼命令，直接工具调用：
+`fr-tools`）——agent 不必 shell 拼命令，直接工具调用。**2026-11-02 精简为三件**（只留 agent
+自己做不方便的事：env 组装/大文件读/双流对齐；grep=读后自过滤、check=读后自判、stats=无
+评价锚暂缓——全量与结构化消费走 CLI）：
 
 | MCP 工具 | 底层 | 备注 |
 |---|---|---|
 | `fr_record` | love.exe + FR_CAPTURE env | sha 自动算；headless 确定性录制 |
-| `fr_read` | fr_dump | frames 选帧视图；响应封顶 100KB |
-| `fr_grep` | fr_dump + 行过滤 | 帧头上下文保留——"哪些帧画了 X" |
-| `fr_check` | fr_check | 判据文件路径或仅内置校验 |
-| `fr_stats` | fr_stats | 四层剖面 |
+| `fr_read` | fr_dump --strip-assets | **默认剥资产 hex**（`# asset … (+NB hex)` 摘要行，实测 3.0MB→10.5KB）；frames 选帧视图；响应封顶 100KB |
 | `fr_diff` | fr_diff | 首分歧帧（bisect 语义）+ 行 diff |
+
+全量字节体获取（转 .frb/抽资产/重渲染等文件级消费）：CLI `python tools/fr_dump.py <流>`
+（不带 --strip-assets，输出=canonical 原文）。
 
 设计约束（fr-rationale §五）：只流通文本与数字（行/矩形/CRC/计数），不流通图像字节；工具
 无状态，状态全在流与判据文件里。

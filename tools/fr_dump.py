@@ -4,6 +4,7 @@
 
 用法:
     python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats]
+                           [--strip-assets]
 
   input       输入会话文件，双输入按 magic 自动识别（FRB1=二进制，否则按
               UTF-8 文本解析）
@@ -11,6 +12,9 @@
               （注释属整会话，过滤视图用于锚行），帧号重排连续
   --stats     在 canonical 文本后追加 '#' 注释摘要块（帧/行总数 + 按 op
               计数，op 字典序）
+  --strip-assets
+              asset 行 hex 体剥离成 '# … (+NB hex)' 摘要行（B=真字节数；
+              观察面省流量，全量字节体不带本参数走 CLI 管道级消费）
 
 输出走 stdout（UTF-8 字节、单 LF 结尾）：无 --stats 时即 canonical 原文
 （.fr 输入 = 文件原文字节）。锚行判据统一引用 canonical 文本行。
@@ -20,7 +24,9 @@
 退出码：0 成功；1 输入失败（SessionError / ValueError / OSError，
 消息前缀 "fr-dump: " 到 stderr）；2 用法错误。
 """
-import os, sys
+import os
+import re
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -48,6 +54,35 @@ def _filter_frames(s, spec):
     return dict(s, entries=entries)
 
 
+_ASSET_RES = (
+    # 结构锚定（fr_codec_gen _render_asset 形态）：image=<id> <w> <h> <hex>、
+    # font=<id> <size:%.6f> <hex>，空载荷记 '-'；canvas/quad 行无 hex 体不匹配
+    re.compile(r"(asset image \d+ \d+ \d+ )([0-9a-fA-F]+|-)\n"),
+    re.compile(r"(asset font \d+ \d+\.\d{6} )([0-9a-fA-F]+|-)\n"),
+)
+
+
+def _strip_assets(s):
+    """dump 文本后处理：asset 行 hex 体剥离（文本级替换——Session 结构不动，
+    dump_text 只认规范 entry 形态，cmnt 载体进不了帧块）。
+
+    asset image 7 4 4 <hex…> → # asset image 7 4 4 (+16B hex)
+    （'#' 前缀=注释形态——不参与再 parse，与 --stats 摘要块同构；参数 token
+    原样保留，只有 hex 体换成字节数摘要。）
+    全量字节体获取走本工具不带本参数（CLI 管道级消费：转 .frb/抽资产/重渲染）。
+    """
+    text = fs.dump_text(s)
+
+    def _sum(m):
+        head, hexbody = m.group(1), m.group(2)
+        n = 0 if hexbody == "-" else len(hexbody) // 2
+        return "# %s(+%dB hex)\n" % (head, n)
+
+    for rex in _ASSET_RES:
+        text = rex.sub(_sum, text)
+    return text
+
+
 def _stats(s):
     """'#' 注释摘要块：帧/行总数 + 按 op 计数（op 字典序）。"""
     counts = {}
@@ -66,7 +101,7 @@ def _stats(s):
 
 
 def main(argv):
-    path, rng, stats = None, None, False
+    path, rng, stats, strip = None, None, False, False
     args = list(argv)
     while args:
         a = args.pop(0)
@@ -74,6 +109,8 @@ def main(argv):
             rng = args.pop(0) if args else None
         elif a == "--stats":
             stats = True
+        elif a == "--strip-assets":
+            strip = True
         else:
             path = a
     if not path:
@@ -83,7 +120,7 @@ def main(argv):
         s = _load(path)
         if rng is not None:
             s = _filter_frames(s, rng)
-        out = fs.dump_text(s)
+        out = _strip_assets(s) if strip else fs.dump_text(s)
         if stats:
             out += _stats(s)
         sys.stdout.buffer.write(out.encode("utf-8"))

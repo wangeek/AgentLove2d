@@ -6,12 +6,13 @@ fr-rationale §五 接口面的实装：每个 MCP 工具对应一个已有 CLI�
 状态全在流与判据文件里。**只流通文本与数字**（D10 符号结算律）。
 
 工具面（tools/list 自描述）：
-  fr_record(game_dir, out, frames?, dt?, seed?, timeout?) → 头less 确定性录制
-  fr_read(stream, frames?, max_lines?)                    → canonical 文本（fr-dump）
-  fr_grep(stream, pattern, frames?, max_lines?)           → 行过滤视图
-  fr_check(stream, checks?, strict?)                      → 判据（fr-check）
-  fr_stats(stream)                                        → 熵剖面（fr-stats）
-  fr_diff(a, b, first_only?)                              → 首分歧帧+行 diff（fr-diff）
+  fr_record(game_dir, out, frames?, dt?, seed?, timeout?) → headless 确定性录制
+  fr_read(stream, frames?)            → canonical 文本（默认剥离资产 hex；全量走 CLI fr_dump）
+  fr_diff(a, b, first_only?)          → 首分歧帧+行 diff（fr-diff）
+
+裁撤记录（2026-11-02 用户精简）：fr_grep（read 后 agent 自过滤）、
+fr_check（agent 对 read 结果自判）、fr_stats（无评价锚前暂缓）——MCP 面
+只留 agent 自己做不方便的事（env 组装/大文件读/双流对齐）。
 
 运行：python tools/fr_mcp.py（stdio；一行一条 JSON-RPC 消息）。
 注册：工作区 .mcp.json（用户 MCP 作用域策略——全局禁用，工作区按需）。
@@ -81,46 +82,12 @@ def t_fr_record(p):
 
 
 def t_fr_read(p):
-    args = [p["stream"]]
+    """读流 canonical 文本。默认剥离资产 hex（--strip-assets——观察面）；
+    全量（含字节体，文件级再消费用）走 CLI：python tools/fr_dump.py <stream>。"""
+    args = [p["stream"], "--strip-assets"]
     if p.get("frames"):
         args += ["--frames", str(p["frames"])]
     rc, out, err = _cli("fr_dump.py", *args)
-    return rc == 0, _cap(out) if rc == 0 else err[-_CAP:]
-
-
-def t_fr_grep(p):
-    args = [p["stream"]]
-    if p.get("frames"):
-        args += ["--frames", str(p["frames"])]
-    rc, out, err = _cli("fr_dump.py", *args)
-    if rc != 0:
-        return False, err[-_CAP:]
-    pat = re.compile(str(p["pattern"]))
-    lines, keep, cur = [], None, None
-    for ln in out.split("\n"):
-        if ln.startswith("frame "):
-            cur = ln
-        elif pat.search(ln):
-            if cur:
-                keep = cur          # 帧头作上下文（同帧多命中只留一份）
-                lines.append(cur)
-                cur = None
-            lines.append(ln)
-    return True, _cap("\n".join(lines)) or "（无命中）"
-
-
-def t_fr_check(p):
-    args = [p["stream"]]
-    if p.get("checks"):
-        args.append(str(p["checks"]))
-    if p.get("strict"):
-        args.append("--strict")
-    rc, out, err = _cli("fr_check.py", *args)
-    return rc == 0, (out + err).strip()[-_CAP:]
-
-
-def t_fr_stats(p):
-    rc, out, err = _cli("fr_stats.py", p["stream"], timeout=30)
     return rc == 0, _cap(out) if rc == 0 else err[-_CAP:]
 
 
@@ -134,31 +101,17 @@ def t_fr_diff(p):
 
 _TOOLS = [
     ("fr_record", "确定性录制一段 LÖVE 游戏会话产出 .fr（零游戏侧改动；"
-     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道）",
+     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道；sha 自动算）",
      {"type": "object", "properties": {
         "game_dir": {"type": "string"}, "out": {"type": "string"},
         "frames": {"type": "integer"}, "dt": {"type": "number"},
         "seed": {"type": "integer"}, "timeout": {"type": "number"}},
       "required": ["game_dir", "out"]}, t_fr_record),
-    ("fr_read", "读流的 canonical 文本（fr-dump；--frames 选帧视图）",
+    ("fr_read", "读流的 canonical 文本（默认剥离资产 hex——帧内容/结构/事件；"
+     "frames 选帧视图。全量含字节体走 CLI fr_dump）",
      {"type": "object", "properties": {
-        "stream": {"type": "string"}, "frames": {"type": "string"},
-        "max_lines": {"type": "integer"}},
+        "stream": {"type": "string"}, "frames": {"type": "string"}},
       "required": ["stream"]}, t_fr_read),
-    ("fr_grep", "按正则过滤流文本行（帧头上下文保留）——'哪些帧画了 X'",
-     {"type": "object", "properties": {
-        "stream": {"type": "string"}, "pattern": {"type": "string"},
-        "frames": {"type": "string"}},
-      "required": ["stream", "pattern"]}, t_fr_grep),
-    ("fr_check", "流校验 + FileCheck 式判据（CHECK/CHECK-NEXT/CHECK-NOT；"
-     "无判据文件也跑幂等+sha 内置校验）",
-     {"type": "object", "properties": {
-        "stream": {"type": "string"}, "checks": {"type": "string"},
-        "strict": {"type": "boolean"}},
-      "required": ["stream"]}, t_fr_check),
-    ("fr_stats", "流熵剖面（op/参数默认值/量化/时间四层——字节都花在哪）",
-     {"type": "object", "properties": {"stream": {"type": "string"}},
-      "required": ["stream"]}, t_fr_stats),
     ("fr_diff", "两流帧对齐 diff：首分歧帧 + 行级差异（回归定位/bisect 语义）",
      {"type": "object", "properties": {
         "a": {"type": "string"}, "b": {"type": "string"},

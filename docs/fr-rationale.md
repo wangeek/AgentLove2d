@@ -76,6 +76,13 @@ frame 3
 | `fr_stats` | op 频度/结构 | 理解会话概况 |
 | `fr_screenshot` | tee₂ 离线回放 + 符号摘要 | **视觉问题的符号结算**：不返回图片，返回差异矩形/计数/hash（D10 符号结算律——agent 要的是"哪里变了"的符号，不是像素） |
 
+> **实施口径（2026-11-02 精简，实装=三件）**：用户拍板 MCP 面只留 agent 自己做不方便的事
+> ——`fr_record`（env 组装）/`fr_read`（大文件读，默认剥资产 hex）/`fr_diff`（双流对齐，
+> 吸收 fr_bisect 首分歧帧语义）。`fr_grep`/`fr_check` 砍（read 后 agent 自过滤/自判——
+> 文本已在上下文里，再包一层是伪原子）；`fr_stats`/`fr_screenshot` 暂缓（无评价锚/待取
+> 证）。全量字节体与结构化消费走 CLI（fr_dump 不带 --strip-assets 即 canonical 原文）。
+> 实装见 `tools/fr_mcp.py`。
+
 设计约束（从本机制直接继承）：
 - MCP 工具**只流通文本与数字**（行、矩形、CRC、计数）——不流通图像字节，与"Agent 读符号"的原则一致；
 - `fr_record` 在无头拓扑下可在服务器/CI 运行，产物与桌面录制逐字节一致（确定性模型保证）；

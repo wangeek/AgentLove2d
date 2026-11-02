@@ -24,21 +24,25 @@ def _rpc(proc, obj):
     return json.loads(line)
 
 
-def _tiny_stream(tmp_path):
+def _tiny_stream(tmp_path, with_asset=False):
     from tools import fr_session as fs
     from tools.fr_gen import tbl
     sha = tbl.tbl_sha256(tbl.parse(
         open(os.path.join(_ROOT, "tables/cmd.tbl"), encoding="utf-8").read()))
-    blk = [("dt", {"val": 0.016}), ("clear", {"color": (0, 0, 0, 255)}),
-           ("s_crc", {"crc": 0}), ("d_crc", {"crc": 7})]
+    blk = [("dt", {"val": 0.016})]
+    if with_asset:
+        blk.append(("asset", {"kind": 0, "id": 7, "w": 4, "h": 4,
+                              "data": bytes.fromhex("00ff00ff" * 8)}))
+    blk += [("clear", {"color": (0, 0, 0, 255)}),
+            ("s_crc", {"crc": 0}), ("d_crc", {"crc": 7})]
     s = dict(width=64, height=48, sha=sha, loglvl="base", seed=1,
              entries=[("frame", blk)])
     p = tmp_path / "s.fr"
-    p.write_text(fs.dump_text(s), encoding="utf-8")
+    p.write_text(fs.dump_text(s), encoding="utf-8", newline="\n")
     return str(p)
 
 
-def test_mcp_initialize_list_read(tmp_path):
+def test_mcp_three_tools_and_read_strip(tmp_path):
     proc = _srv()
     try:
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -49,37 +53,30 @@ def test_mcp_initialize_list_read(tmp_path):
         proc.stdin.flush()
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [t["name"] for t in r["result"]["tools"]]
-        assert "fr_read" in names and "fr_check" in names and "fr_diff" in names
-        st = _tiny_stream(tmp_path)
+        assert names == ["fr_record", "fr_read", "fr_diff"]   # 精简三件
+        st = _tiny_stream(tmp_path, with_asset=True)
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                         "params": {"name": "fr_read",
                                    "arguments": {"stream": st}}})
         text = r["result"]["content"][0]["text"]
         assert "frame 0" in text and "clear 0 0 0 255" in text
-        assert r["result"]["isError"] is False
-        # fr_grep：命中行 + 帧头上下文
-        r = _rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                        "params": {"name": "fr_grep",
-                                   "arguments": {"stream": st,
-                                                 "pattern": "clear"}}})
-        assert "frame 0" in r["result"]["content"][0]["text"]
+        # 资产 hex 剥离：摘要行在（参数原样+真字节数）、原始 hex 不在
+        assert "asset image 7 4 4 (+32B hex)" in text
+        assert "00ff00ff" not in text
     finally:
         proc.kill()
 
 
-def test_mcp_check_and_diff(tmp_path):
+def test_mcp_diff(tmp_path):
     proc = _srv()
     try:
         st = _tiny_stream(tmp_path)
         st2 = tmp_path / "s2.fr"
         st2.write_text(open(st, encoding="utf-8").read().replace(
-            "clear 0 0 0 255", "clear 1 1 1 255"), encoding="utf-8")
+            "clear 0 0 0 255", "clear 1 1 1 255"), encoding="utf-8",
+            newline="\n")
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                        "params": {"name": "fr_check",
-                                   "arguments": {"stream": st}}})
-        assert "CHECK OK" in r["result"]["content"][0]["text"]
-        r = _rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                        "params": {"name": "fr_diff", "strict": False,
+                        "params": {"name": "fr_diff",
                                    "arguments": {"a": st, "b": str(st2),
                                                  "first_only": True}}})
         text = r["result"]["content"][0]["text"]
