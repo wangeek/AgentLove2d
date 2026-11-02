@@ -182,5 +182,33 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 全量字节体获取（转 .frb/抽资产/重渲染等文件级消费）：CLI `python tools/fr_dump.py <流>`
 （不带 --strip-assets，输出=canonical 原文）。
 
+### 调用示例（实测返回，非编造）
+
+`fr_read` 选帧视图——`{"stream": "dream/dream_heroes.fr", "frames": "0-1"}` 返回 425 字节
+（原流 3.0MB；资产 hex 已剥成摘要行，1.5MB 的 font 只剩一行）：
+
+```text
+frb1 640 480 1bd74035…c11292 full 1
+frame 0
+dt 0.066667
+# asset image 1 32 32 (+1337B hex)
+# asset image 2 32 32 (+1006B hex)
+# asset image 3 32 32 (+1356B hex)
+# asset font 4 14.000000 (+1562900B hex)
+st 0 "bg.t" num 0.000000
+clear 8 10 16 255
+s_crc 2842958758
+d_crc 3923194618
+frame 1
+dt 0.066667
+…
+```
+
+`fr_diff` 双流对齐——同流自比 `{"a": "run1.fr", "b": "run2.fr"}` 返回
+`HEAD same / FRAMES a=60 b=60 / FIRST-DIVERGENCE -1`（-1=全程无分歧；有分歧时给出
+首分歧帧号+该帧行级 `-`/`+` 差异，回归定位从这里收窄）。`fr_record` 给
+`{"game_dir": "<游戏目录>", "out": "run.fr", "frames": 30}` → 返回
+`rc=0 out=… bytes=… frames=30`（无头确定性，双跑逐字节相等）。
+
 设计约束（fr-rationale §五）：只流通文本与数字（行/矩形/CRC/计数），不流通图像字节；工具
 无状态，状态全在流与判据文件里。
