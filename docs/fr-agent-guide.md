@@ -176,7 +176,7 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 | MCP 工具 | 底层 | 备注 |
 |---|---|---|
 | `fr_record` | love.exe + FR_CAPTURE env | sha 自动算；headless 确定性录制 |
-| `fr_read` | fr_dump --strip-assets | **默认剥资产 hex**（`# asset … (+NB hex)` 摘要行，实测 3.0MB→10.5KB）；frames 选帧视图；响应封顶 100KB |
+| `fr_read` | fr_dump --strip-assets | **默认剥资产 hex**（`# asset … (+NB hex)` 摘要行，实测 3.0MB→10.5KB）；**描述内含 op 词汇表**（版本号随 `tables/cmd.tbl` 表头走，测试防漂移）；frames 选帧视图；响应封顶 100KB |
 | `fr_diff` | fr_diff | 首分歧帧（bisect 语义）+ 行 diff |
 
 全量字节体获取（转 .frb/抽资产/重渲染等文件级消费）：CLI `python tools/fr_dump.py <流>`

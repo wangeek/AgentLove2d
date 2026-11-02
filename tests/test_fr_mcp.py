@@ -67,6 +67,26 @@ def test_mcp_three_tools_and_read_strip(tmp_path):
         proc.kill()
 
 
+def test_mcp_vocab_in_read_description(tmp_path):
+    """fr_read description 内含 op 词汇表，版本号与 cmd.tbl 表头一致（防漂移）。"""
+    proc = _srv()
+    try:
+        r = _rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        desc = {t["name"]: t["description"]
+                for t in r["result"]["tools"]}["fr_read"]
+        head = open(os.path.join(_ROOT, "tables/cmd.tbl"),
+                    encoding="utf-8").readline()
+        ver = head.split("v", 2)[-1].strip()          # 表头 "… v1.2"
+        assert ("v%s" % ver) in desc                   # 版本随表走
+        for op in ("dt", "asset", "ev", "st", "clear", "draw", "print",
+                   "rect", "rt", "scissor", "d_crc",       # 基础面代表
+                   "CP", "SET", "INS", "DEL", "MOVE", "POSE", "ENTER",
+                   "EXIT"):                                # delta 编辑面代表
+            assert op in desc, op
+    finally:
+        proc.kill()
+
+
 def test_mcp_diff(tmp_path):
     proc = _srv()
     try:

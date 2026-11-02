@@ -108,11 +108,30 @@ _TOOLS = [
         "seed": {"type": "integer"}, "timeout": {"type": "number"}},
       "required": ["game_dir", "out"]}, t_fr_record),
     ("fr_read", "读流的 canonical 文本（默认剥离资产 hex——帧内容/结构/事件；"
-     "frames 选帧视图。全量含字节体走 CLI fr_dump）",
+     "frames 选帧视图，如 \"0-5\"。全量含字节体走 CLI fr_dump）。\n"
+     "op 词汇表 v1.2（真源 tables/cmd.tbl，sha256 入会话头；行=op 参数名…，"
+     "f32 文本 %.6f，rgba8 四整数，str 带引号）：\n"
+     "骨架：frb1 <w> <h> <sha> <档 base/full> <seed> 头行｜frame N 帧始｜"
+     "cmnt 注释｜dt f 帧首步长｜s_crc u32 状态根CRC + d_crc u32 当帧out行CRC（帧尾双行）\n"
+     "head：asset image <id> <w> <h> <hex> / canvas <id> <w> <h> / "
+     "quad <id> <x> <y> <w> <h> <sw> <sh> / font <id> <size> <hex>（资产注册，首帧全量）\n"
+     "in：ev <slot> <type> <src> args… 输入事件（签名=love.event.push 参数序，src 0=OS/1=合成/2=自定义）｜"
+     "call <slot> <fn> <depth> args… 函数调用｜timer <slot> <id> 定时器到期\n"
+     "log：rngc <seed> 随机数边界｜st <obj> \"key\" <val> 堆镜像diff（full 级）｜err \"what\" 未收录API/兜底\n"
+     "out 绘制：clear <r g b a>｜draw <tex> <quad> <x> <y> <rot> <sx> <sy> <ox> <oy> <rgba>（quad 0=整图）｜"
+     "print <font> \"text\" <x> <y> …｜rect <mode> <x> <y> <w> <h> <rx> <ry> <width>（mode 0=fill 1=line）｜"
+     "line \"x y …\" <width>｜poly <mode> \"pts\"｜circle <mode> <x> <y> <r> <seg>｜"
+     "arc <mode> <arctype> <x> <y> <r> <a1> <a2> <seg>｜points \"pts\" <size>｜"
+     "rt <target> 画布切换（0=屏幕）｜scissor <x> <y> <w> <h> 裁剪\n"
+     "out 编辑（frame-delta v1.5）：CP <ref> 本帧行集=ref 帧行集（ref 省=上一帧）｜"
+     "SET <asset> <k> <param> <val> 单参绝对更新｜INS <pos> \"line\" 行插入｜DEL <pos> 删行｜"
+     "MOVE <asset> <k> <dx> <dy> 相对位移｜PLACE <asset> <k> <x> <y> 绝对置位｜"
+     "POSE <asset> <k> \"line\" 整行替换｜ENTER \"line\" 对象入场｜EXIT <asset> <k> 对象离场",
      {"type": "object", "properties": {
         "stream": {"type": "string"}, "frames": {"type": "string"}},
       "required": ["stream"]}, t_fr_read),
-    ("fr_diff", "两流帧对齐 diff：首分歧帧 + 行级差异（回归定位/bisect 语义）",
+    ("fr_diff", "两流帧对齐 diff：首分歧帧 + 行级差异（回归定位/bisect 语义）；"
+     "行内 op 词汇见 fr_read 描述的词汇表",
      {"type": "object", "properties": {
         "a": {"type": "string"}, "b": {"type": "string"},
         "first_only": {"type": "boolean"}},
