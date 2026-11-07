@@ -30,11 +30,9 @@ sys.path.insert(0, _ROOT)
 _LOVE = os.path.join(_ROOT, "megasource", "build115", "love", "Release", "love.exe")
 _PY = sys.executable
 _CAP = 100_000  # 单响应文本封顶（字节）——防 38MB 流灌爆上下文
-
-
-def _p(path):
-    """相对路径锚定仓库根（MCP 服务进程 CWD 由宿主定，不可依赖）。"""
-    return path if os.path.isabs(path) else os.path.join(_ROOT, path)
+# 路径语义：相对参数一律按服务进程 CWD（=宿主工作区，MCP 惯例）解析——
+# 跨仓注册（如 sango_probe 指到本仓 fr_mcp.py）时，调用方的工作区相对
+# 路径直觉正确；工具自身资产（love.exe/cmd.tbl/CLI 脚本）走 _ROOT 绝对。
 
 
 def _tbl_sha():
@@ -45,7 +43,7 @@ def _tbl_sha():
 
 def _cli(script, *args, timeout=60):
     r = subprocess.run([_PY, os.path.join(_ROOT, "tools", script), *args],
-                       capture_output=True, cwd=_ROOT, timeout=timeout)
+                       capture_output=True, timeout=timeout)  # CWD=宿主工作区
     out = r.stdout.decode("utf-8", "replace")
     err = r.stderr.decode("utf-8", "replace")
     return r.returncode, out, err
@@ -60,7 +58,10 @@ def _cap(text):
 # ---- 工具实现（参数 dict → (ok, text)）----
 
 def t_fr_record(p):
-    out = os.path.abspath(_p(p["out"]))
+    out = os.path.abspath(p["out"])
+    d = os.path.dirname(out)
+    if d:
+        os.makedirs(d, exist_ok=True)   # love fopen 失败=静默禁用捕获，先建父目录
     env = dict(os.environ, FR_CAPTURE="1", FR_OUT=out, FR_SHA=_tbl_sha(),
                FR_HEADLESS="1")
     if p.get("frames"):
@@ -70,9 +71,9 @@ def t_fr_record(p):
     if p.get("seed"):
         env["FR_SEED"] = str(int(p["seed"]))
     try:
-        r = subprocess.run([_LOVE, os.path.abspath(_p(p["game_dir"]))], env=env,
-                           cwd=_ROOT, capture_output=True,
-                           timeout=float(p.get("timeout", 120)))
+        r = subprocess.run([_LOVE, os.path.abspath(p["game_dir"])], env=env,
+                           capture_output=True,
+                           timeout=float(p.get("timeout", 120)))  # CWD=宿主工作区
     except subprocess.TimeoutExpired:
         return False, "录制超时（调大 timeout 或减 frames）"
     except OSError as e:
@@ -92,7 +93,7 @@ def t_fr_record(p):
 def t_fr_read(p):
     """读流 canonical 文本。默认剥离资产 hex（--strip-assets——观察面）；
     全量（含字节体，文件级再消费用）走 CLI：python tools/fr_dump.py <stream>。"""
-    args = [_p(p["stream"]), "--strip-assets"]
+    args = [p["stream"], "--strip-assets"]
     if p.get("frames"):
         args += ["--frames", str(p["frames"])]
     rc, out, err = _cli("fr_dump.py", *args)
@@ -100,7 +101,7 @@ def t_fr_read(p):
 
 
 def t_fr_diff(p):
-    args = [_p(p["a"]), _p(p["b"])]
+    args = [p["a"], p["b"]]
     if p.get("first_only"):
         args.append("--first-only")
     rc, out, err = _cli("fr_diff.py", *args)

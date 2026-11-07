@@ -89,29 +89,34 @@ def test_mcp_vocab_in_read_description(tmp_path):
 
 
 def test_mcp_cwd_independent_paths(tmp_path):
-    """宿主以未知 CWD 启动 MCP 服务也能用工作区相对路径（真录 4 帧）。
+    """跨仓注册形态（sango_probe 指到本仓 fr_mcp.py）：宿主任意 CWD 下
+    相对参数按 CWD（调用方工作区）解析、工具资产走本仓绝对路径。
 
-    回归 2026-11-07 两处集成病：① fr_mcp 进程内 import tools 无 sys.path
-    引导（fr_record 首次实跑即炸）；② 相对路径按服务进程 CWD 解析。"""
+    回归 2026-11-07 三处集成病：① fr_mcp 进程内 import tools 无 sys.path
+    引导（fr_record 首次实跑即炸）；② 相对路径语义漂移（应=CWD=宿主
+    工作区，MCP 惯例）；③ out 父目录不存在时 love fopen 静默禁用捕获。"""
     proc = _srv(cwd=str(tmp_path))   # 故意不在工作区根
     try:
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                         "params": {"name": "fr_record",
                                    "arguments": {
-                                       "game_dir": "megasource/libs/love/demo",
-                                       "out": "v.fr", "frames": 4,
+                                       "game_dir": os.path.join(
+                                           _ROOT, "megasource", "libs", "love",
+                                           "demo"),
+                                       "out": "runs/v.fr", "frames": 4,
                                        "dt": 0.016, "seed": 1}}})
         assert r["result"]["isError"] is False, r["result"]["content"]
         assert "frames=4" in r["result"]["content"][0]["text"]
+        assert (tmp_path / "runs" / "v.fr").is_file()   # out=CWD 相对+父目录自建
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                         "params": {"name": "fr_read",
-                                   "arguments": {"stream": "v.fr"}}})
+                                   "arguments": {"stream": "runs/v.fr"}}})
         text = r["result"]["content"][0]["text"]
         assert r["result"]["isError"] is False
         assert "frame 0" in text
     finally:
         proc.kill()
-        (tmp_path / "v.fr").unlink(missing_ok=True)
+        (tmp_path / "runs" / "v.fr").unlink(missing_ok=True)
 
 
 def test_mcp_diff(tmp_path):
