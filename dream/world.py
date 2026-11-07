@@ -262,17 +262,19 @@ def run_rooms(a, drv, kit_rows, chatlog):
                 elif not a.headless:
                     time.sleep(0.2)
                     # 收尾闸 1：整局总时长（防无界跑——用户实测 20 分钟不停）
+                    # 两闸都是整局收尾：必须 return（break 只跳出房内循环，
+                    # 外层 while n < rooms_max 会开新房——n 不增长则无限换房）
                     if time.time() > t_total:
                         print("dream.world: 总时长上限（%.0fs）→收尾"
                               % a.max_total, flush=True)
-                        break
+                        return n, s, frames_all
                     # 收尾闸 2：静默超时——活性=事件或流帧增长（stream_len
                     # 变化）；Runner 空闲重绘不算（dbg 一直在涨会假活）
                     if time.time() - last_event > a.max_idle \
                             and stream_len == last_idle_stream:
                         print("dream.world: 静默超时（%.0fs 无事件且流无新帧）"
                               "→收尾" % a.max_idle, flush=True)
-                        break
+                        return n, s, frames_all
                     last_idle_stream = stream_len
     finally:
         if proc is not None:
