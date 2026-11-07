@@ -812,6 +812,31 @@ def _split_frames(path):
     return head, frames
 
 
+def test_headless_ctee_geometry(tmp_path):
+    """B10+（2026-11-07）：纯 C 侧 tee（env FR_OUT）+ 无头（FR_HEADLESS=1）
+    ——头几何不得为 0。原病：无窗 gfx->getWidth() 返 0 落盘 `frb1 0 0`，
+    流不可 parse（MCP fr_record 首跑即炸）。修复：FR_W/FR_H 显式钉几何、
+    缺省回退 640×480（demo conf 域）——头几何与有窗 C-tee 一致，fr_check
+    全链可读。"""
+    out = str(tmp_path / "hd.fr")
+    env = os.environ.copy()
+    env["FR_CAPTURE"] = "1"
+    env["FR_OUT"] = out
+    env["FR_SHA"] = _tbl_sha()
+    env["FR_SEED"] = "3056735"
+    env["FR_HEADLESS"] = "1"
+    r = subprocess.run([FORK_LOVE, DEMO], capture_output=True, timeout=90,
+                       env=env, cwd=_ROOT)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    with open(out, encoding="utf-8") as f:
+        head = f.readline().split()
+    assert head[:3] == ["frb1", "640", "480"], head   # 无头几何回退=conf 域
+    rr = subprocess.run([sys.executable,
+                         os.path.join(_ROOT, "tools", "fr_check.py"), out],
+                        capture_output=True, timeout=120, cwd=_ROOT)
+    assert rr.returncode == 0, (rr.stdout, rr.stderr)
+
+
 def test_c_tee_parities_lua_tee(tmp_path):
     """B10：FR_OUT C 侧 tee 与 --out Lua tee 并存对拍——同一进程双流，
     除 dt 行（C tee 记 timer.step 真值、Lua tee 写 FIXED_DT）与 cmnt 外

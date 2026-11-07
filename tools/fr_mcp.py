@@ -24,9 +24,17 @@ import subprocess
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 进程内 import tools 需要（fr_record 表指纹；子进程 fr_dump 自带引导，
+# 但宿主以任意 CWD 启动本服务时 sys.path[0]=tools/ 不含仓库根）
+sys.path.insert(0, _ROOT)
 _LOVE = os.path.join(_ROOT, "megasource", "build115", "love", "Release", "love.exe")
 _PY = sys.executable
 _CAP = 100_000  # 单响应文本封顶（字节）——防 38MB 流灌爆上下文
+
+
+def _p(path):
+    """相对路径锚定仓库根（MCP 服务进程 CWD 由宿主定，不可依赖）。"""
+    return path if os.path.isabs(path) else os.path.join(_ROOT, path)
 
 
 def _tbl_sha():
@@ -52,7 +60,7 @@ def _cap(text):
 # ---- 工具实现（参数 dict → (ok, text)）----
 
 def t_fr_record(p):
-    out = os.path.abspath(p["out"])
+    out = os.path.abspath(_p(p["out"]))
     env = dict(os.environ, FR_CAPTURE="1", FR_OUT=out, FR_SHA=_tbl_sha(),
                FR_HEADLESS="1")
     if p.get("frames"):
@@ -62,7 +70,7 @@ def t_fr_record(p):
     if p.get("seed"):
         env["FR_SEED"] = str(int(p["seed"]))
     try:
-        r = subprocess.run([_LOVE, os.path.abspath(p["game_dir"])], env=env,
+        r = subprocess.run([_LOVE, os.path.abspath(_p(p["game_dir"]))], env=env,
                            cwd=_ROOT, capture_output=True,
                            timeout=float(p.get("timeout", 120)))
     except subprocess.TimeoutExpired:
@@ -84,7 +92,7 @@ def t_fr_record(p):
 def t_fr_read(p):
     """读流 canonical 文本。默认剥离资产 hex（--strip-assets——观察面）；
     全量（含字节体，文件级再消费用）走 CLI：python tools/fr_dump.py <stream>。"""
-    args = [p["stream"], "--strip-assets"]
+    args = [_p(p["stream"]), "--strip-assets"]
     if p.get("frames"):
         args += ["--frames", str(p["frames"])]
     rc, out, err = _cli("fr_dump.py", *args)
@@ -92,7 +100,7 @@ def t_fr_read(p):
 
 
 def t_fr_diff(p):
-    args = [p["a"], p["b"]]
+    args = [_p(p["a"]), _p(p["b"])]
     if p.get("first_only"):
         args.append("--first-only")
     rc, out, err = _cli("fr_diff.py", *args)
