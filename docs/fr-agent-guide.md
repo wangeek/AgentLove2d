@@ -41,10 +41,11 @@ FR_CAPTURE=1 FR_OUT=run.fr FR_SHA=$SHA \
 | `FR_CAPTURE=1` | 开捕获（te 会话：in/out/log 全录） | 关 |
 | `FR_OUT=<path>` | 流输出路径 | — |
 | `FR_SHA=<指纹>` | 会话头表指纹 | — |
+| `FR_DT=<f>` | 固定步长——**覆写 `love.timer.step` 返回值**（游戏循环按固定 dt 走，双跑逐字节的前提；2026-11-07 兑现：原实现只兜底不覆写） | 真实 dt |
 | `FR_FRAMES=<n>` | 录 n 帧自动封口退出（smoke 用） | 手动关窗 |
-| `FR_DT=<f>` | 固定步长（确定性录制，跳过真实计时） | 真实 dt |
 | `FR_SEED=<n>` | 种子写会话头 | 1 |
-| `FR_HEADLESS=1` | 无头（t.window=false，判据链路首选） | 有窗 |
+| `FR_HEADLESS=1` | 无头（t.window=false，判据链路首选）；头几何 FR_W/FR_H 钉定，缺省回退 640×480（无窗 `getWidth()` 返 0 原样落盘会产出不可 parse 的流） | 有窗 |
+| `FR_W=<n>` / `FR_H=<n>` | 会话头几何显式钉定（无头/异形窗口用） | 窗口实尺寸 |
 | `FR_BOOT_SCRIPT=<path>` | 外置启动脚本（如 require 游戏状态模块后调 `love.graphics._frStateRoot(根表)`——把 s_crc 观测收缩到你关心的状态子图） | — |
 | `FR_VIDEO_OUT=<path>` | 逐帧原始像素倾倒（配 fr-render --record 出 mp4） | — |
 
@@ -209,6 +210,22 @@ dt 0.066667
 首分歧帧号+该帧行级 `-`/`+` 差异，回归定位从这里收窄）。`fr_record` 给
 `{"game_dir": "<游戏目录>", "out": "run.fr", "frames": 30}` → 返回
 `rc=0 out=… bytes=… frames=30`（无头确定性，双跑逐字节相等）。
+
+### 闭环实测（2026-11-07，demo rig 端到端）
+
+验收环四步全经 MCP 面走通（demo rig 4 帧 smoke，流 144,591B）：
+
+1. **录制**：`fr_record`（game_dir/out/dt/seed）→ rc=0；out 父目录自动创建；
+2. **确定性双跑**：同参再录 → `fr_diff` = `FIRST-DIVERGENCE -1`（逐字节相等——
+   前提是 §1 的 `FR_DT` 覆写语义，当批兑现）；
+3. **扰动定位**：改 dt 0.016→0.02 再录 → `fr_diff` = `FIRST-DIVERGENCE 0` +
+   `- dt 0.016000 / + dt 0.020000`（改动精确落帧 0 一行）；
+4. **判据验收**：`fr_read` 取锚 → checks.txt → `python tools/fr_check.py
+   <流> checks.txt --strict` → `CHECK OK (7 directives)` rc=0；负面对照
+   （不成立锚）→ `FAIL: …（判据第 N 行）` rc=1。
+
+注意：宿主侧 MCP 服务进程长驻——**改 `tools/fr_mcp.py` 后须杀掉
+`python tools/fr_mcp.py` 进程**才会加载新代码（下轮工具调用自动重拉）。
 
 设计约束（fr-rationale §五）：只流通文本与数字（行/矩形/CRC/计数），不流通图像字节；工具
 无状态，状态全在流与判据文件里。

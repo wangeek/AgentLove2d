@@ -837,6 +837,23 @@ def test_headless_ctee_geometry(tmp_path):
     assert rr.returncode == 0, (rr.stdout, rr.stderr)
 
 
+def test_ctee_fixed_dt_deterministic(tmp_path):
+    """B10+（2026-11-07）：FR_DT 固定步长覆写 step 返回（agent-guide §1
+    语义兑现）——同参双跑逐字节相等，含帧 0 dt。原实现 FR_DT 只作无 step
+    兜底不覆写：帧 0 启动微秒抖动（0.000023 vs 0.000035）落 dt 行破逐字节
+    （MCP fr_read/fr_diff E2E 首跑实证）。"""
+    outs = [str(tmp_path / "a.fr"), str(tmp_path / "b.fr")]
+    for out in outs:
+        env = os.environ.copy()
+        env.update(FR_CAPTURE="1", FR_OUT=out, FR_SHA=_tbl_sha(),
+                   FR_SEED="3056735", FR_DT="0.016", FR_HEADLESS="1")
+        r = subprocess.run([FORK_LOVE, DEMO], capture_output=True, timeout=90,
+                           env=env, cwd=_ROOT)
+        assert r.returncode == 0, (r.returncode, r.stderr)
+    a, b = open(outs[0], "rb").read(), open(outs[1], "rb").read()
+    assert a == b, (a[:200], b[:200], "FR_DT 固定步长下双跑不逐字节")
+
+
 def test_c_tee_parities_lua_tee(tmp_path):
     """B10：FR_OUT C 侧 tee 与 --out Lua tee 并存对拍——同一进程双流，
     除 dt 行（C tee 记 timer.step 真值、Lua tee 写 FIXED_DT）与 cmnt 外
