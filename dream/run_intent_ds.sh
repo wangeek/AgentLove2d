@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 
 DIRECTIVE='像素小剧场《夜行》，36 帧。剧情：夜色里有一间小屋，头顶挂着月亮和几颗星；一个英雄（32x32 精灵，站立图资产 1、跑步图资产 2）从小屋旁出发，沿地面匀速跑到画面右侧边缘（frame 15 时他开始跑步，跑步姿势和站立不同），frame 20 时天空中飘来一朵云，frame 30 他跑到终点停下休息直到剧终。后景画一次就不要再动了，只写每一帧真正变化的东西。'
 

@@ -15,3 +15,26 @@ refs/
 # LÖVE 官方源码克隆（嵌套 git 仓库，不入库）
 # 复原：git clone --depth 1 https://github.com/love2d/love.git && git checkout 11.5（锁定 commit 6eb8d54）
 love2d/love-src/
+
+# ---- 会话/运行产物（可再生产，不入库）----
+# dream：视频（审看投影）、LLM 会话日志、注入/事件通道、Runner 调试、world 跑局流
+dream/*.mp4
+dream/*.chatlog
+dream/*.evinj
+dream/*.evq
+dream/*.runnerdbg
+dream/run_*.fr
+dream/_*.png
+dream/kit_*/
+
+# 根目录：下划线前缀=临时探针/实验脚本（不入库约定）；一次性验证产物
+/_*
+/_*/
+/_verify/
+/v.fr
+
+# 发布包（可再打包，fr-capture-demo.zip）
+dist/
+
+# PowerShell 重定向事故产物
+$null

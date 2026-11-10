@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 
 DIRECTIVE='分层像素动画《夜行》：后景（夜空/月亮/星/地面/小屋）只在 frame 0 画一次、永远不动；前景英雄（32x32 精灵）沿地面从左向右行走。词汇表里的编辑行（MOVE/POSE/ENTER/CP）就是为"只写变化的部分"准备的——画面没变的层不要重写。frame 0 全量行（后景照抄）：
 C 8 10 30 255

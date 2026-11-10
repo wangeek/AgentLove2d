@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 export PYTHONIOENCODING=utf-8   # tee 管道下 python 缺省本地编码（GBK）→终端 UTF-8 乱码
 
 # 清历史 love 进程（僵尸 Runner 防互踩）

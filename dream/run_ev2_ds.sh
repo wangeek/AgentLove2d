@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 
 DIRECTIVE='像素小剧场《渔舟》，36 帧。黄昏的湖面，一叶小舟载着船夫从左岸缓缓划向右岸，天边有落日，岸边有芦苇。frame 10 附近观众会与这个世界互动（届时告诉你发生了什么）。剧末画面归于平静。'
 

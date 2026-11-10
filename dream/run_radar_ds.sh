@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 
 DIRECTIVE='雷达扫描动画，60 帧完成一次 360 度扫描（角度一律用弧度：帧 N 的扫描起始角 = 0.1047*N 弧度）。全部用矢量 op，位图不要用，文字必须用 print 引用 font 资产 4。每帧按顺序写这些行（静态行逐字照抄，一个字符都不要改）：
 C 10 15 40 255

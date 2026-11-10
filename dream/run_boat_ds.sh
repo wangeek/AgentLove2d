@@ -4,7 +4,7 @@ set -e
 cd /d/Lab/AgentLove2d
 export LLM_BASE_URL=https://api.deepseek.com
 export LLM_MODEL=deepseek-flash
-export LLM_API_KEY=***REDACTED***
+export LLM_API_KEY="${LLM_API_KEY:?先 export LLM_API_KEY <DeepSeek key> 再跑}"   # key 不入库
 
 DIRECTIVE='像素小剧场《渔舟》，36 帧，分四个阶段：第一阶段 frame 0-14 小渔船从左岸匀速划向右岸（船身 PY + 船夫 D 精灵每帧都在移动，每帧都要写它们的编辑行，动作重复也要写）；第二阶段 frame 15-19 船夫加速划桨（移动步子变大）；第三阶段 frame 20-29 天开始下雨（frame 20 起每帧多写 4 行 LN 短竖线当雨点，位置每帧变化，船继续走）；第四阶段 frame 30-35 船靠岸雨停，画面完全静止（每帧写裸 CP）。
 后景在 frame 0 一次画完（总共不超过 16 行）：黄昏天空=2 个矩形（上深下浅）；落日=1 个扁矩形（橙色贴在天际线，不用圆形）；远山=2 个三角 PY（每座 3 个顶点）；湖面=1 个大矩形；落日倒影=1 个扁矩形；芦苇=每侧 3 行 LN。
