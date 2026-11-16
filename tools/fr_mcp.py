@@ -110,7 +110,12 @@ def t_fr_diff(p):
 
 _TOOLS = [
     ("fr_record", "确定性录制一段 LÖVE 游戏会话产出 .fr（零游戏侧改动；"
-     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道；sha 自动算）",
+     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道；sha 自动算）。\n"
+     "资产卫生建议（本工具只录制，不执行资产处理——是否采纳由你衡量）："
+     "若游戏习惯整图入引擎再缩小绘制（如 icon 128×128 屏上只画 32×32），"
+     "建议把资产预处理为屏幕原生尺寸、atlas 用显式 quad 切片、绘制保持 "
+     "sx=sy=1——流的 draw 几何直接可读，asset 字节显著下降（128²→32²=1/16），"
+     ":px 紧凑档的 sx/sy 省略也随之可用。",
      {"type": "object", "properties": {
         "game_dir": {"type": "string"}, "out": {"type": "string"},
         "frames": {"type": "integer"}, "dt": {"type": "number"},

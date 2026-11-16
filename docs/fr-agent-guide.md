@@ -53,11 +53,18 @@ FR_CAPTURE=1 FR_OUT=run.fr FR_SHA=$SHA \
 读 `love.math.random` 之外的真随机/墙钟，先处理。事件由你（或脚本）注入——同一输入序列产
 出同一流。
 
+**资产卫生（建议——由你衡量实施，工具族不代做，D15）**：Lua 生态习惯整图入引擎再缩小
+绘制（icon 128×128 屏上 32×32），这会让流的 draw 几何（sx/sy 缩放噪声）与 asset 字节都
+虚胖。若可行，建议把资产预处理为**屏幕原生尺寸**、atlas 用**显式 quad 切片**、绘制保持
+`sx=sy=1`——连带收益：`:px` 紧凑档的 sx/sy 省略表重新可用（B13 实测非 1 scale 命中 0
+被开除）、asset 字节 128²→32² 降 16 倍。看屏幕语义可用 `fr_dump --geo` 派生视图（§2）。
+
 ## 2. 观察：四个问题四种工具
 
 | 你想回答 | 工具 | 命令 |
 |---|---|---|
 | "第 5-10 帧到底画了什么？" | fr-dump | `python tools/fr_dump.py run.fr --frames 5-10` |
+| "屏幕上各是什么矩形？"（缩放/切片派生） | fr-dump --geo | `python tools/fr_dump.py run.fr --frames 5-10 --geo`（draw 行后插 `# geo: rect=…` 派生行，读侧算屏幕有效矩形；`--names <kit>/assets.json` 把 kit 语义名 join 进摘要与 geo 行） |
 | "这流的构成？（多少帧、什么 op 多）" | fr-dump --stats | `python tools/fr_dump.py run.fr --stats` |
 | "字节都花在哪？帧间重复率？" | fr-stats | `python tools/fr_stats.py run.fr [--json]`（op/参数默认值/量化/时间四层剖面） |
 | "回放是否逐帧可复现？" | fr-render | `python tools/fr_render.py run.fr`（stdout `D_CRC <n> <crc>` + `PIXEL x y r g b` 采样） |
@@ -156,13 +163,13 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 
 | 工具 | 一句话 | 关键参数 |
 |---|---|---|
-| fr_dump | 流→canonical 文本/摘要（判据素材） | `--frames a-b` `--stats` |
+| fr_dump | 流→canonical 文本/摘要（判据素材） | `--frames a-b` `--stats` `--strip-assets` `--geo` `--names assets.json` |
 | fr_check | 内置校验 + FileCheck 判据 | `checks.txt` `--strict` |
 | fr_lint | 结构诊断（幻资产/帧序/对账） | `--dream`（dream 流口径） |
 | fr_stats | 四层熵剖面 | `--json` |
 | fr_render | 离线回放（D_CRC/PIXEL）/ mp4 / --sim 内核重演 | `--record` `--sim` |
 | fr_as / fr_dis | .fr↔.frb 互转 | `-o` |
-| fr_assets | 流抽资产 kit / 从文件建 kit | `-o` `--from-files` |
+| fr_assets | 流抽资产 kit / 从文件建 kit（assets.json 含 src 语义名——fr_dump --names 可 join） | `-o` `--from-files` |
 | fr_prec | :px↔:full 精度档转换 | |
 | fr_delta_check | 增量流对拍（Tier1 展开 etc.） | |
 | fr_diff | 两流帧对齐 diff（首分歧帧+行级差异） | `--frames a-b` `--first-only` |

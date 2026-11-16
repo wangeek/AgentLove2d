@@ -96,7 +96,7 @@
 |---|---|---|
 | fr-gen | cmd.tbl → C/Python codec | 表到编解码的生成器 |
 | fr-as / fr-dis | .fr ↔ .frb | 互转（round-trip 回归的执行者） |
-| fr-dump | .fr/.frb → 可读 dump | 锚行判据的素材 |
+| fr-dump | .fr/.frb → 可读 dump | 锚行判据的素材；`--strip-assets` 剥资产 hex / `--geo` 派生屏幕矩形（D15 读侧派生） |
 | fr-check | 流 + 判据脚本 → 通过/失败 | FileCheck 式判据运行器 |
 | fr-run | .frb → 回放驱动（注入 in、比对 end） | 回放即测试 |
 | fr-diff | 两流 → 锚行级差异 | 日常回归主力 |
