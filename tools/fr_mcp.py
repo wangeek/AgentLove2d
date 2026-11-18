@@ -63,13 +63,19 @@ def t_fr_record(p):
     if d:
         os.makedirs(d, exist_ok=True)   # love fopen 失败=静默禁用捕获，先建父目录
     env = dict(os.environ, FR_CAPTURE="1", FR_OUT=out, FR_SHA=_tbl_sha(),
-               FR_HEADLESS="1")
+               FR_HEADLESS="1",
+               # C 侧护栏：目标存在默认拒绝覆盖（防误伤另一进程正在写的流，
+               # 2026-11-18 事故）。录制工具的语义是"这次调用要一条新流"，
+               # 因此这里显式放行覆盖——由调用参数决定目标，不留孤儿旧流。
+               FR_OVERWRITE="1")
     if p.get("frames"):
         env["FR_FRAMES"] = str(int(p["frames"]))
     if p.get("dt"):
         env["FR_DT"] = str(float(p["dt"]))
     if p.get("seed"):
         env["FR_SEED"] = str(int(p["seed"]))
+    if p.get("max_mb"):
+        env["FR_MAX_MB"] = str(float(p["max_mb"]))
     try:
         r = subprocess.run([_LOVE, os.path.abspath(p["game_dir"])], env=env,
                            capture_output=True,
@@ -110,7 +116,9 @@ def t_fr_diff(p):
 
 _TOOLS = [
     ("fr_record", "确定性录制一段 LÖVE 游戏会话产出 .fr（零游戏侧改动；"
-     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道；sha 自动算）。\n"
+     "FR_CAPTURE/FR_OUT/FR_SHA/FR_HEADLESS env 通道；sha 自动算）。"
+     "out 已存在会被覆盖（本工具显式放行）；max_mb 给体积上限（防无界长跑，"
+     "省略=不限）；timeout 到点即杀进程（录制路径依赖到限封口）。\n"
      "资产卫生建议（本工具只录制，不执行资产处理——是否采纳由你衡量）："
      "若游戏习惯整图入引擎再缩小绘制（如 icon 128×128 屏上只画 32×32），"
      "建议把资产预处理为屏幕原生尺寸、atlas 用显式 quad 切片、绘制保持 "
@@ -119,7 +127,8 @@ _TOOLS = [
      {"type": "object", "properties": {
         "game_dir": {"type": "string"}, "out": {"type": "string"},
         "frames": {"type": "integer"}, "dt": {"type": "number"},
-        "seed": {"type": "integer"}, "timeout": {"type": "number"}},
+        "seed": {"type": "integer"}, "max_mb": {"type": "number"},
+        "timeout": {"type": "number"}},
       "required": ["game_dir", "out"]}, t_fr_record),
     ("fr_read", "读流的 canonical 文本（默认剥离资产 hex——帧内容/结构/事件；"
      "frames 选帧视图，如 \"0-5\"。全量含字节体走 CLI fr_dump）。\n"

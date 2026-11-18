@@ -119,6 +119,26 @@ def test_mcp_cwd_independent_paths(tmp_path):
         (tmp_path / "runs" / "v.fr").unlink(missing_ok=True)
 
 
+def test_mcp_record_overwrites_same_path(tmp_path):
+    """fr_record 复用同一 out 路径必须成功（C 侧护栏 2026-11-18：存在即拒，
+    录制工具显式放行 FR_OVERWRITE=1）。连录两次，第二次不得被护栏拦住。"""
+    proc = _srv(cwd=str(tmp_path))
+    try:
+        args = {"game_dir": os.path.join(_ROOT, "megasource", "libs", "love",
+                                         "demo"),
+                "out": "twice.fr", "frames": 4, "dt": 0.016, "seed": 1}
+        for i in (1, 2):
+            r = _rpc(proc, {"jsonrpc": "2.0", "id": i, "method": "tools/call",
+                            "params": {"name": "fr_record",
+                                       "arguments": args}})
+            text = r["result"]["content"][0]["text"]
+            assert r["result"]["isError"] is False, text
+            assert "frames=4" in text, text
+    finally:
+        proc.kill()
+        (tmp_path / "twice.fr").unlink(missing_ok=True)
+
+
 def test_mcp_diff(tmp_path):
     proc = _srv()
     try:
