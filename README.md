@@ -41,11 +41,26 @@ python tools/fr_dis.py /tmp/game.frb | head
 python tools/fr_dump.py /tmp/game.frb --stats
 ```
 
+## 实战验证（第三方项目实测，2026-11）
+
+MemoryRemake（LÖVE 重制工程）把 FR 流当主验证手段跑了整轮开发，数据与教训见
+**[docs/fr-agent-practice-report.md](docs/fr-agent-practice-report.md)**。要点：
+
+- **规模**：23 份判据 / 39 项冒烟 / 72 秒跑完（并行 4 路）；落盘 75 条流
+- **判据不吃时间**：92% 的时间是进程启动与封口等待，真正跑游戏 < 10 秒——杠杆在录制路径，不在写更细的判据
+- **五步闭环**：双录 → `fr_diff -1`（确定性）→ 扰动必帧 0 分叉 → 正例 rc=0 → 负例必 FAIL
+- **体积三档**：全量 10.2MB / 精简 93KB（1.4%，判据链路默认）/ `.frb` 5.0MB（留存）
+- **六个录制坑**：普通游戏无头不推帧、不 terminate 必超时 180s、窗口输入污染、存档串味、
+  env 传中文崩 UTF-8、GUI 子系统 stdout 无处写
+- **最贵一课**：一条手工调试流长到 20.4GB（36.7 万帧、2.2GB 单行混进 NUL），
+  之后**整条流对文本工具静默失效**——录制必须带帧上限，工具应当能识别"不可判定流"
+
 ## 文档地图
 
 | 想了解 | 去哪 |
 |---|---|
 | 项目动机与 Agent 工作流 | docs/fr-rationale.md |
+| **agent 怎么用 FR 做验证（实践报告）** | **docs/fr-agent-practice-report.md** |
 | 系统全貌 / 一帧的一生 / 实施路线 | docs/design.md（总纲入口） |
 | 流格式规格（v1.2.7 封版） | docs/fr-spec.md + tables/cmd.tbl（命令单一真源） |
 | 架构决策 D1–D13 | docs/decisions.md |
