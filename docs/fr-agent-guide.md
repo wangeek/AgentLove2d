@@ -88,7 +88,9 @@ FR_CAPTURE=1 FR_OUT=run.fr FR_SHA=$SHA \
 3. 分叉帧内**先看 in 段**（ev 是否相同——输入分叉先修输入注入），再看 out 行序与参数，
    最后看 st（状态何时开始错，可能早于画面——st 是因，画面是果）。
 4. `--frames a-b` 收窄窗口迭代；`fr_lint`（`python tools/fr_lint.py run.fr`）查结构病
-   （幻资产/帧序/d_crc 对账）。
+   （幻资产/帧序/d_crc 对账）。**流读不动时先跑它还魂**：L006 专报"不可判定流"
+   （行内 NUL 字节 / 单行超 256MB / 非法 UTF-8），流式扫描越界即返——一条 20.4GB 的坏流
+   0.11 秒就能报到具体行号，不必等某个工具卡死才发现流坏了。
 
 原则：**定位到行，不改到像素**。你拿到的是"帧 17 的 draw tex=3 x=440≠420"，直接映射回
 游戏代码里的那一次 draw 调用。
@@ -165,7 +167,7 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 |---|---|---|
 | fr_dump | 流→canonical 文本/摘要（判据素材） | `--frames a-b` `--stats` `--strip-assets` `--geo` `--names assets.json` |
 | fr_check | 内置校验 + FileCheck 判据 | `checks.txt` `--strict` |
-| fr_lint | 结构诊断（幻资产/帧序/对账） | `--dream`（dream 流口径） |
+| fr_lint | 结构诊断（幻资产/帧序/对账/不可判定流） | `--dream`（dream 流口径）`--max-line-mb N`（L006 阈值，缺省 256） |
 | fr_stats | 四层熵剖面 | `--json` |
 | fr_render | 离线回放（D_CRC/PIXEL）/ mp4 / --sim 内核重演 | `--record` `--sim` |
 | fr_as / fr_dis | .fr↔.frb 互转 | `-o` |

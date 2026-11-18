@@ -10,8 +10,13 @@
   L004 帧行序：dt 须为帧首行、end 双行须为帧末两行、asset 行仅允许出现在首帧、
        S 行必须独占帧（帧内除 dt/end 外唯一内容行）。
   L005 增量协商：S 行在场而 head 缺 `+d` 标记。
-诊断形态：编译器式 "Lxxx 帧F: 消息"（供打回 LLM 自修复）。
+  L006 不可判定流：行内含 NUL 字节 / 单行超过阈值 / 非法 UTF-8 字节——
+       **在 parse 之前拦下**（2026-11-18 实战取证：MemoryRemake 一条 20.4GB
+       调试流第 3108 行有 2.2GB 单行、以 NUL 开头，之后 grep 判其为二进制、
+       整条流对任何按行工具静默失效；本诊断就是那道提示）。
+诊断形态：编译器式 "Lxxx 帧F: 消息"（供打回 LLM 自修复；L006 给行号）。
 """
+import codecs
 import os
 import sys
 import zlib
@@ -19,6 +24,75 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tools import fr_session
+
+# L006 单行上限：合法载荷最大到 4K RGBA8（3840×2160×4 = 33MB → hex 66MB），
+# 留足余量取 256MB——真流里的正常长行远小于此，越界只可能是失控/脏数据。
+MAX_LINE_BYTES = 256 * 1024 * 1024
+_CHUNK = 4 * 1024 * 1024
+
+
+def scan_unjudgeable(path, max_line_bytes=MAX_LINE_BYTES, chunk=_CHUNK):
+    """流式扫描"还能不能按行读"（L006），内存安全且**越界即返回**。
+
+    不看语义（不解析、不校验 CRC）：只查三件让流不可判定的事——
+    行内 NUL 字节、单行超阈值、非法 UTF-8。20.4GB 那条坏流在此实现下
+    只读到 256MB 就报出结论，不需要把 2.2GB 的单行读进内存。
+    """
+    diags = []
+    dec = codecs.getincrementaldecoder("utf-8")()   # 每次调用新建（全局会跨次累积）
+    lineno, cur_len = 1, 0
+    with open(path, "rb") as f:
+        while True:
+            buf = f.read(chunk)
+            if not buf:
+                break
+            # UTF-8 合法性：增量解码（跨块安全；失败即不可判定）
+            try:
+                dec.decode(buf)
+            except UnicodeDecodeError:
+                diags.append("L006 行%d: 非法 UTF-8 字节（流不可判定）" % lineno)
+                return diags
+            pos = 0
+            while True:
+                nl = buf.find(b"\n", pos)
+                seg = buf[pos:] if nl < 0 else buf[pos:nl]
+                if b"\x00" in seg:
+                    diags.append("L006 行%d: 行内含 NUL 字节"
+                                 "（疑似未初始化缓冲写盘，流不可判定）" % lineno)
+                    return diags
+                cur_len += len(seg)
+                if cur_len > max_line_bytes:
+                    diags.append("L006 行%d: 单行 %d 字节超过阈值 %dMB"
+                                 "（流不可判定）"
+                                 % (lineno, cur_len, max_line_bytes >> 20))
+                    return diags
+                if nl < 0:
+                    break
+                lineno += 1
+                cur_len = 0
+                pos = nl + 1
+        try:
+            dec.decode(b"", True)
+        except UnicodeDecodeError:
+            diags.append("L006 行%d: 非法 UTF-8 字节（尾部截断，流不可判定）" % lineno)
+    return diags
+
+
+def _scan_text_unjudgeable(text, max_line_bytes):
+    """lint_text 入口的同一道闸（text 已在内存里，逐行查即可）。
+
+    行长按**字节**算：字符数超阈值必然越界；字符数 ×4 仍在阈值内必然安全；
+    其余情况才真去编码（避免对正常流逐行 encode）。"""
+    for i, l in enumerate(text.split("\n"), 1):
+        if "\x00" in l:
+            return ["L006 行%d: 行内含 NUL 字节"
+                    "（疑似未初始化缓冲写盘，流不可判定）" % i]
+        n = len(l)
+        if n > max_line_bytes or (n > (max_line_bytes >> 2)
+                                  and len(l.encode("utf-8")) > max_line_bytes):
+            return ["L006 行%d: 单行超过阈值 %dMB（流不可判定）"
+                    % (i, max_line_bytes >> 20)]
+    return []
 
 
 def _crc(rows):
@@ -41,8 +115,11 @@ _OTHER_PREFIXES = ("dt ", "asset ", "ev ", "call ", "timer ", "rngc ",
 _DELTA_EDIT_PREFIXES = ("SET ", "INS ", "DEL ")
 
 
-def lint_text(text, dream=False):
+def lint_text(text, dream=False, max_line_bytes=MAX_LINE_BYTES):
     """canonical .fr 文本 → 诊断字符串列表（空 = 全绿）。"""
+    bad = _scan_text_unjudgeable(text, max_line_bytes)
+    if bad:
+        return bad          # 不可判定流：不再 parse（超长行会拖死解析）
     try:
         fr_session.parse_text(text)
     except fr_session.SessionError as e:
@@ -125,11 +202,23 @@ def lint_text(text, dream=False):
 
 def main(argv):
     if len(argv) < 2 or not os.path.isfile(argv[1]):
-        print("用法: python tools/fr_lint.py <in.fr> [--dream]", file=sys.stderr)
+        print("用法: python tools/fr_lint.py <in.fr> [--dream] [--max-line-mb N]",
+              file=sys.stderr)
         return 2
     dream = "--dream" in argv[2:]
+    max_bytes = MAX_LINE_BYTES
+    if "--max-line-mb" in argv[2:]:
+        i = argv.index("--max-line-mb")
+        max_bytes = int(argv[i + 1]) * 1024 * 1024
+    # L006 先行且流式：坏流（如 20.4GB / 单行 2.2GB）在读到阈值处即报，
+    # 既不整文件入内存，也不等到 parse 才炸（2026-11-18 实战取证）
+    bad = scan_unjudgeable(argv[1], max_bytes)
+    if bad:
+        for d in bad:
+            print(d)
+        return 1
     with open(argv[1], encoding="utf-8") as f:
-        diags = lint_text(f.read(), dream=dream)
+        diags = lint_text(f.read(), dream=dream, max_line_bytes=max_bytes)
     for d in diags:
         print(d)
     return 1 if diags else 0
