@@ -66,6 +66,7 @@ MemoryRemake（LÖVE 重制工程）把 FR 流当主验证手段跑了整轮开�
 | 架构决策 D1–D13 | docs/decisions.md |
 | 性能基准线与优化路径 | docs/benchmarks.md |
 | 魔改设计与取证 | docs/love2d-gap.md |
+| 魔改引擎源码（LÖVE 11.5 的 fork，`fr-capture` 分支，含构建说明） | [github.com/wangeek/love-fr](https://github.com/wangeek/love-fr) |
 
 ## 测试
 
