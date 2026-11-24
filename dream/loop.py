@@ -105,6 +105,7 @@ def gen_burst(drv, messages, a, base_frame, n_want, ev_note, chatlog, state):
             shown = "<剧本同前，略>" + shown[len(a.directive):]
         _log(chatlog, "TURN %d · user（本次追加）" % state["turn_seq"], shown)
         usage_before = dict(drv.usage_totals)
+        raw = None            # 本轮的 LLM 回应；调用本身失败则保持 None
         try:
             raw = drv.generate(messages)
             _log(chatlog, "TURN %d · assistant（LLM 回应）" % state["turn_seq"], raw)
@@ -124,9 +125,19 @@ def gen_burst(drv, messages, a, base_frame, n_want, ev_note, chatlog, state):
             got += chunk
             retry, feedback = 0, ""
         except (ValueError, RuntimeError) as e:
+            retry += 1
+            if raw is None:
+                # LLM 调用本身失败（端点超时/限流/网络、from-file chunk 耗尽）：
+                # 没有回应可保留，也不该对模型说"你的输出被拒"。直接重试，
+                # 到上限上抛。原先这里无条件 append(raw)——首次调用失败时 raw
+                # 未绑定，UnboundLocalError 盖掉真实错误（重试也没发生）；后续
+                # 轮则把上一轮的旧回应当成失败样本塞回历史（2026-11-24 修）。
+                feedback = ""
+                if retry > a.max_retry:
+                    raise RuntimeError("LLM 调用重试上限：%s" % e) from None
+                continue
             # 失败样本保留进历史（LLM 看到自己错在哪——删掉它会原样重犯，
             # 渔舟/地牢实测死循环根因）；feedback user 追加在失败之后
-            retry += 1
             feedback = "上次输出被拒：%s——请逐 token 对照词汇表检查每行的参数个数后重出" \
                        % str(e)[:300]
             messages.append({"role": "assistant", "content": raw})

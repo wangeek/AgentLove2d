@@ -13,8 +13,16 @@
 流文件整个 run 连续 append（room 边界=信令帧，不是文件边界）——
 保存 .fr 即保存整局。Runner 整 run 起一次。
 
+出口闸（2026-11-24）：都在房内循环顶部、每轮必检，谁也绕不过——
+- 总时长 --max-total；静默 --max-idle（无事件且流不增长；headless 也生效）；
+- 连续展开失败 --max-bad-bursts（到限保存已有流；成功一次即清零）；
+- LLM 调用抛异常（端点故障/重试上限）由 main 接住并收尾。
+退出码：0=正常收尾且 lint 全绿；1=lint 有诊断；2=用法错误；
+3=异常中止（流已保存，chatlog 记 RUN ABORTED 与 traceback）。
+
 用法：python -m dream.world --llm --out run.fr --kit dream [--headless]
             [--rooms-max N] [--frames-per-room 900] [--burst 6]
+            [--max-total 600 --max-idle 10 --max-bad-bursts 5]
 """
 import argparse
 import os
@@ -112,6 +120,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
     t_total = time.time() + a.max_total
     last_event = time.time()      # 最近事件时刻（idle 判定基准）
     last_idle_stream = 0          # 上轮 idle 检查时的流帧数（增长=活性）
+    bad_bursts = 0                # 连续展开失败的 burst 数（成功即清零）
 
     def _append_stream(new_frames, first_ev=None):
         """新帧 → 流 append。展开失败（对象寻址未配对等）抛 ValueError，
@@ -157,7 +166,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
             a.directive = directive   # gen_burst 读 a.directive（每房注入）
             _log(chatlog, "ROOM %d DIRECTIVE" % (n + 1), directive)
             room_start = len(frames_all)
-            room_frames = 0
+            bad_bursts = 0   # 每房新上下文：失败计数不跨房累积
             got = gen_burst(drv, messages, a, len(frames_all),
                             a.frames_initial, "", chatlog, state)
             frames_all += got
@@ -190,6 +199,24 @@ def run_rooms(a, drv, kit_rows, chatlog):
             deadline_frames = len(frames_all) + a.frames_per_room
             # —— room 内循环：事件 → burst → 信令/帧上限
             while True:
+                # 总时长闸（每轮必检，放在最前）：防无界跑。原先它和静默闸一起
+                # 只在"窗口模式的无事件轮"里检查，于是三条路径都绕开了它——
+                # ① headless 每轮直接落到 sleep，两闸永不触发；② burst 失败后的
+                # continue 跳到下一轮顶部，事件不断时闸永不执行；③ 非 headless
+                # 的事件轮本身也不走底部那个 elif 分支（2026-11-24 修）。
+                if time.time() > t_total:
+                    print("dream.world: 总时长上限（%.0fs）→收尾"
+                          % a.max_total, flush=True)
+                    return n, s, frames_all
+                # 静默闸（同样每轮必检）：活性 = 事件或流帧增长。headless 没有
+                # 事件，LLM 一直不给合法信令时帧数也不涨——原先这一闸只存在于
+                # 窗口模式的无事件轮，headless 永远等不到它。
+                if time.time() - last_event > a.max_idle \
+                        and stream_len == last_idle_stream:
+                    print("dream.world: 静默超时（%.0fs 无事件且流无新帧）"
+                          "→收尾" % a.max_idle, flush=True)
+                    return n, s, frames_all
+                last_idle_stream = stream_len
                 if not a.headless:
                     if proc.poll() is not None:
                         print("dream.world: Runner 退出（rc=%s）"
@@ -198,7 +225,7 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     evs, evq_off = poll_evq(evq, evq_off)
                 else:
                     time.sleep(0.2)
-                    evs = []
+                    evs = []             # headless 无 Runner → 永远没有事件
                 if len(frames_all) >= deadline_frames:
                     print("dream.world: room %d 帧数上限→下一房（本房 0 分）"
                           % (n + 1), flush=True)
@@ -215,12 +242,13 @@ def run_rooms(a, drv, kit_rows, chatlog):
                     print("EVENT %s（frame %s）——已注入提示词"
                           % (ev_rows_txt.replace("\n", " | "),
                              ef[0].get("frame", "?")), flush=True)
+                    before = len(frames_all)   # 回滚锚：本 burst 之前的帧数（= 已落盘帧数）
                     try:
                         got = gen_burst(drv, messages, a, len(frames_all),
                                         a.burst, note, chatlog, state)
                         frames_all += got   # 并入（_append_stream 的 resolve 依赖）
                         _append_stream(got, first_ev=ef)
-                        room_frames = len(frames_all) - room_start
+                        bad_bursts = 0       # 成功一次就清零（上限管的是"连续"失败）
                         # LLM 响应全文上控制台（逐帧）
                         for no, rows in got:
                             print("LLM 帧 %d（%d 行）：" % (no, len(rows)),
@@ -232,20 +260,33 @@ def run_rooms(a, drv, kit_rows, chatlog):
                                 except ValueError:
                                     print("  %s %r" % (op, f), flush=True)
                     except ValueError as e:
-                        # 展开失败（对象寻址未配对/参数错）→ 已追加帧回滚
-                        # （流与 frames_all 同步回退——只回退本 burst 已写入
-                        # 的帧；_append_stream 逐 burst 追加，回滚=重写至
-                        # room_start+room_frames 前缀）。feedback 点名错误。
-                        bad = len(frames_all) - (room_start + room_frames)
-                        if bad > 0:
-                            del frames_all[-bad:]
+                        # 展开失败（对象寻址未配对/参数错）→ 只撤本 burst 追加的帧。
+                        # 流文件不用动：_append_stream 是整段 resolve 成功后才落盘，
+                        # 抛错时还什么都没写。回滚锚取"调用前的帧数"，不能取
+                        # room_start+room_frames——后者不含初始 burst，房内第一次
+                        # 失败时会把已落盘的初始帧也从内存删掉：内存与流文件脱节，
+                        # 下一次向 LLM 要帧的起始号退回去，那一轮好帧被静默丢弃
+                        # （2026-11-24 实测 bases [0,2,0,2,4]）。feedback 点名错误。
+                        bad_bursts += 1
+                        del frames_all[before:]
                         messages[:] = messages[:1]
                         state["last_feedback"] = (
                             "上次输出被拒：%s——修正后重出。常见原因："
                             "MOVE 常规形态恒三参数（资产 dx dy，多实例才写 k）；"
                             "每帧行必须完整（色值 4 分量不可缺）" % str(e)[:240])
-                        print("dream.world: burst 失败→丢弃重建会话重试：%s"
-                              % str(e)[:120], flush=True)
+                        print("dream.world: burst 失败→丢弃重建会话重试"
+                              "（%d/%d）：%s"
+                              % (bad_bursts, a.max_bad_bursts, str(e)[:120]),
+                              flush=True)
+                        # 上限：连续失败说明不是偶发笔误（LLM 理解不了词汇 /
+                        # kit 缺资产 / 提示词有矛盾），再试只是烧 token。原先
+                        # 这里无计数、continue 又绕过超时闸——事件不断时无限跑。
+                        if bad_bursts >= a.max_bad_bursts:
+                            print("dream.world: 连续 %d 次 burst 展开失败"
+                                  "（--max-bad-bursts）→收尾，保存已有流"
+                                  % bad_bursts, flush=True)
+                            return n, s, frames_all
+                        time.sleep(0.2)      # 失败轮也要让出节拍（原先是热循环）
                         continue
                     # 信令扫描（复用初始 burst 后的同款判定）
                     pv, ov = _check_signals()
@@ -260,22 +301,9 @@ def run_rooms(a, drv, kit_rows, chatlog):
                               % (n, pv, n, s), flush=True)
                         break
                 elif not a.headless:
+                    # 窗口模式的无事件轮：等 Runner 上报。两道收尾闸已在循环
+                    # 顶部检查过（必须 return——break 只跳出房内循环，外层会开新房）
                     time.sleep(0.2)
-                    # 收尾闸 1：整局总时长（防无界跑——用户实测 20 分钟不停）
-                    # 两闸都是整局收尾：必须 return（break 只跳出房内循环，
-                    # 外层 while n < rooms_max 会开新房——n 不增长则无限换房）
-                    if time.time() > t_total:
-                        print("dream.world: 总时长上限（%.0fs）→收尾"
-                              % a.max_total, flush=True)
-                        return n, s, frames_all
-                    # 收尾闸 2：静默超时——活性=事件或流帧增长（stream_len
-                    # 变化）；Runner 空闲重绘不算（dbg 一直在涨会假活）
-                    if time.time() - last_event > a.max_idle \
-                            and stream_len == last_idle_stream:
-                        print("dream.world: 静默超时（%.0fs 无事件且流无新帧）"
-                              "→收尾" % a.max_idle, flush=True)
-                        return n, s, frames_all
-                    last_idle_stream = stream_len
     finally:
         if proc is not None:
             try:
@@ -307,6 +335,8 @@ def main(argv=None):
                     help="静默超时（秒）：无事件且 Runner 无渲染")
     ap.add_argument("--max-total", type=float, default=600.0,
                     help="整局总时长上限（秒）")
+    ap.add_argument("--max-bad-bursts", type=int, default=5,
+                    help="连续展开失败的 burst 上限——到限整局收尾并保存已有流")
     ap.add_argument("--love", default=os.path.join(
         _ROOT, "megasource", "build115", "love", "Release", "love.exe"))
     ap.add_argument("--chatlog", default="")
@@ -329,7 +359,18 @@ def main(argv=None):
         dsession.build_session([], seed=a.seed, width=a.width,
                                height=a.height, has_same=True), a.out)
     # write_session 全量重写——空会话头后改为 append 模式由 _append_stream 续写
-    n, s, frames = run_rooms(a, drv, kit_rows, chatlog)
+    abort = None
+    try:
+        n, s, frames = run_rooms(a, drv, kit_rows, chatlog)
+    except Exception as e:      # noqa: BLE001
+        # LLM 端点故障/重试上限等：不带病续跑，也不能让异常跳过收尾——流是逐
+        # burst 追加落盘的，已写的帧要保住、日志要写完关掉。原先异常直接穿出，
+        # main 的收尾整段不执行：chatlog 停在半途、没有结束标记（2026-11-24 修）。
+        import traceback
+        tb = traceback.format_exc()
+        abort = "%s: %s" % (type(e).__name__, (str(e).strip() or "（无消息）")[:300])
+        n = s = frames = None
+        print("dream.world: 异常中止 → 保存已有流：%s" % abort, flush=True)
 
     # 收尾：lint 全文 + 判据（帧已逐 burst append 进 .fr——不再全量重写，
     # 否则中途 append 的帧会被旧状态覆盖——用户手跑实测流回退到 12 帧）
@@ -337,13 +378,25 @@ def main(argv=None):
     diags = fr_lint.lint_text(text, dream=True)
     for d in diags:
         print("lint:", d, flush=True)
-    _log(chatlog, "RUN DONE", "rooms=%d score=%d frames=%d" % (n, s, len(frames)))
+    # 中止时内存里的帧表可能与文件脱节——帧数以流文件实际落盘为准
+    n_frames = len(frames) if frames is not None else text.count("\nframe ")
+    if abort is None:
+        _log(chatlog, "RUN DONE", "rooms=%d score=%d frames=%d" % (n, s, n_frames))
+    else:
+        _log(chatlog, "RUN ABORTED",
+             "%s｜frames=%d（流已保存）\n%s" % (abort, n_frames, tb))
     chatlog.close()
-    print("dream.world: %d 房 / %d 分 / %d 帧 → %s（lint %s）"
-          % (n, s, len(frames), a.out,
-             "全绿" if not diags else "%d 条诊断" % len(diags)))
+    if abort is not None:
+        print("dream.world: 异常中止（已保存 %d 帧）→ %s：%s"
+              % (n_frames, a.out, abort), flush=True)
+    else:
+        print("dream.world: %d 房 / %d 分 / %d 帧 → %s（lint %s）"
+              % (n, s, n_frames, a.out,
+                 "全绿" if not diags else "%d 条诊断" % len(diags)))
     if drv.usage_totals:
         print("dream.world: usage %s" % drv.usage_totals, flush=True)
+    if abort is not None:
+        return 3
     return 0 if not diags else 1
 
 

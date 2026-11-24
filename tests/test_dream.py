@@ -467,3 +467,79 @@ def test_end_to_end_from_file(tmp_path):
         cp2 = fr_render.render(str(out), timeout=120)
         got2 = [l for l in cp2.stdout.decode().split("\n") if l.startswith("D_CRC ")]
         assert got == got2
+
+
+# ---------------- gen_burst：LLM 调用失败的处置（2026-11-24 修）----------------
+# 原先失败处理无条件 append(raw)：一轮 burst 的首次调用就失败时 raw 未绑定，
+# UnboundLocalError 盖掉真实错误（端点故障/限流），"重试"根本没发生；后续轮
+# 失败则把上一轮的旧回应当成失败样本再塞回历史。下面三条分别钉住。
+
+_GOOD = ('frame 0\nPR 4 "x" 8 8 0 1 1 255 255 255 255\n'
+         'frame 1\nPR 4 "x" 8 8 0 1 1 255 255 255 255\n')
+_SHORT = 'frame 0\nPR 4 "x" 8 8 0 1 1 255 255 255 255\n'   # 少一帧：能 parse、校验拒
+
+
+def _gen_burst_run(tmp_path, answers):
+    """按调用序给回应（或抛出的异常）跑一次 gen_burst。
+    返回 (结果：帧列表或异常, messages, LLM 调用次数)。"""
+    import argparse
+    from dream import loop
+    chatlog = open(tmp_path / "c.log", "w", encoding="utf-8", newline="\n")
+    messages = [{"role": "system", "content": "sys"}]
+    calls = []
+
+    class Drv:
+        usage_totals = {}
+
+        def generate(self, msgs):
+            calls.append(1)
+            ans = answers[min(len(calls), len(answers)) - 1]
+            if isinstance(ans, Exception):
+                raise ans
+            return ans
+
+    a = argparse.Namespace(directive="测试剧本", chunk_frames=2, max_retry=2)
+    try:
+        res = loop.gen_burst(Drv(), messages, a, 0, 2, "", chatlog,
+                             {"turn_seq": 0, "last_feedback": ""})
+    except Exception as e:      # noqa: BLE001 —— 异常作为结果交还给用例判断
+        res = e
+    finally:
+        chatlog.close()
+    return res, messages, len(calls)
+
+
+def test_gen_burst_retries_when_llm_call_itself_fails(tmp_path):
+    """首次调用就抛 RuntimeError → 重试后成功（原先：UnboundLocalError）。
+    调用失败没有"失败样本"可留，也不该对模型说"你的输出被拒"。"""
+    res, messages, calls = _gen_burst_run(
+        tmp_path, [RuntimeError("LLM HTTP 504"), _GOOD])
+    assert isinstance(res, list) and [no for no, _ in res] == [0, 1], repr(res)
+    assert calls == 2
+    # 两次 user（重试各要一次）+ 成功的 assistant；没有任何"被拒"反馈
+    assert [m["role"] for m in messages] == ["system", "user", "user", "assistant"]
+    assert not any("被拒" in m["content"] for m in messages[1:])
+
+
+def test_gen_burst_call_failure_does_not_reuse_stale_response(tmp_path):
+    """先有一次真正的"输出被拒"（此时 raw 存在），随后调用失败 → 不得把上一轮
+    的旧回应再当成失败样本追加一遍，也不把调用失败说成模型的错。"""
+    res, messages, calls = _gen_burst_run(
+        tmp_path, [_SHORT, RuntimeError("LLM 网络错误"), _GOOD])
+    assert isinstance(res, list) and [no for no, _ in res] == [0, 1], repr(res)
+    assert calls == 3
+    # assistant 恰好两份：被拒的那一份 + 最终成功的那一份（有"旧回应重复"的 bug
+    # 时会是三份）；"失败样本保留"的纪律对"有回应的失败"照旧成立
+    assert [m["content"] for m in messages if m["role"] == "assistant"] \
+        == [_SHORT, _GOOD]
+    assert len([m for m in messages if m["role"] == "user"
+                and m["content"].startswith("上次输出被拒")]) == 1
+    assert "被拒" not in messages[-2]["content"]      # 调用失败之后那一轮的 user
+
+
+def test_gen_burst_gives_up_after_max_retry_on_call_failure(tmp_path):
+    """调用一直失败 → 试满 --max-retry 后上抛说清楚原因的 RuntimeError。"""
+    res, messages, calls = _gen_burst_run(tmp_path, [RuntimeError("LLM HTTP 504")])
+    assert isinstance(res, RuntimeError), repr(res)
+    assert "重试上限" in str(res) and "LLM HTTP 504" in str(res)
+    assert calls == 3            # 首试 1 次 + 重试 2 次
