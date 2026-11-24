@@ -49,7 +49,7 @@ python tools/fr_dump.py /tmp/game.frb --stats
 
 | 层 | 需要什么 | 有了它能做什么 |
 |---|---|---|
-| 读写与判定已有的流 | Python 3.11（只用标准库；跑测试另需 pytest） | `fr_dump`、`fr_check`、`fr_diff`、`fr_lint`、`fr_stats`、`fr_as` / `fr_dis`、`fr_assets`、`fr_prec`；MCP 的 `fr_read`、`fr_diff` |
+| 读写与判定已有的流 | Python（在 3.11 上验证；只用标准库，跑测试另需 pytest） | `fr_dump`、`fr_check`、`fr_diff`、`fr_lint`、`fr_stats`、`fr_as` / `fr_dis`、`fr_assets`、`fr_prec`；MCP 的 `fr_read`、`fr_diff` |
 | **录制与回放** | **魔改后的 `love.exe`**：源码在 [wangeek/love-fr](https://github.com/wangeek/love-fr)（`fr-capture` 分支），构建步骤见其 README（Windows + MSVC，需放进 megasource） | 录制游戏、`fr_render`（离线回放、`--sim` 内核重演、`FR_PLAY` 播放）、MCP 的 `fr_record`、`demo` 验证程序 |
 | 可选 | ffmpeg；C 编译器（gcc 或 clang）；官方 LÖVE 11.5 运行时 | ffmpeg 只用于 `fr_render --record` 出 mp4（路径写死在 `tools/fr_render.py`，换机器要改）；C 编译器用于改命令表后的编解码自测，没有则跳过；官方运行时只用于 `tests/test_l0.py` 的 L0 样机对拍 |
 
@@ -62,14 +62,13 @@ python tools/fr_dump.py /tmp/game.frb --stats
 
 ### 测试在什么条件下能跑
 
-2026-11-24 的实测：把本仓库克隆到一个**不含** `megasource/` 和 `love2d/` 的目录（等于没构建引擎），`pytest tests` 的结果是 **129 通过、48 失败或报错、3 跳过**，4 秒跑完。构建好引擎后是 180 项全过。
+2026-11-24 的实测：把本仓库克隆到一个**不含** `megasource/` 和 `love2d/` 的目录（等于没构建引擎），`pytest tests` 的结果是 **129 通过、48 失败或报错、3 跳过**，4 秒跑完。引擎、官方运行时、kit 资产都齐备时是 180 项全过、零跳过。
 
-需要注意两点：
+需要注意三点：
 
-- **那 48 项不会自动跳过，会直接失败。** 43 项需要魔改后的 `love.exe`：`test_capture` 25、`test_render` 6、`test_ctee_guard` 5、`test_stats` 4、`test_fr_mcp` 2、`test_delta_check` 1；另外 5 项需要官方运行时（`test_l0`）。
+- **那 48 项不会自动跳过，会直接失败。** 43 项需要魔改后的 `love.exe`：`test_capture` 25、`test_render` 6、`test_ctee_guard` 5、`test_stats` 4、`test_fr_mcp` 2、`test_delta_check` 1；另外 5 项需要官方运行时（`test_l0`）——所以只构建引擎还不够，这 5 项要另备官方 LÖVE 11.5。
 - **跳过的 3 项**：`test_interactive` 一项（缺引擎），`test_world` 两项（缺 `dream/kit_heroes/assets.txt`——kit 资产按设计不入库，再生方法见 `dream/.gitignore`）。
-
-所以看到大量 `FileNotFoundError: [WinError 2]`，先确认 `megasource/build115/love/Release/love.exe` 在不在。
+- **先看缺的是哪个。** 失败信息是 `FileNotFoundError: [WinError 2]`，但不会写出缺的是哪个文件，要按测试所属文件判断：`test_l0` 缺的是 `love2d/love-11.5-win64/love.exe`，其余缺的是 `megasource/build115/love/Release/love.exe`。
 
 ## 实战验证（第三方项目实测，2026-11）
 
