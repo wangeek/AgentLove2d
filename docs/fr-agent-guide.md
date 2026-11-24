@@ -28,6 +28,10 @@ s_crc 12345 / d_crc 67890                    ← 每帧校验（堆状态 CRC / 
 
 游戏不需要任何源码修改。用 fork 构建的 love.exe 跑你的游戏目录，环境变量开捕获：
 
+> 引擎源码与构建步骤在 [wangeek/love-fr](https://github.com/wangeek/love-fr)（`fr-capture` 分支）。
+> 本机惯例位置是 `megasource/build115/love/Release/love.exe`——`tools/fr_render.py` 与
+> `tools/fr_mcp.py` 都按这个相对路径找它，换目录要改这两处。
+
 ```bash
 # 表指纹（录制会话头要写入；同仓库表变则需重算）
 SHA=$(python -c "from tools.fr_gen import tbl; print(tbl.tbl_sha256(tbl.parse(open('tables/cmd.tbl',encoding='utf-8').read())))")
@@ -171,18 +175,24 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 
 ## 8. 工具速查
 
-| 工具 | 一句话 | 关键参数 |
-|---|---|---|
-| fr_dump | 流→canonical 文本/摘要（判据素材） | `--frames a-b` `--stats` `--strip-assets` `--geo` `--names assets.json` |
-| fr_check | 内置校验 + FileCheck 判据 | `checks.txt` `--strict` |
-| fr_lint | 结构诊断（幻资产/帧序/对账/不可判定流） | `--dream`（dream 流口径）`--max-line-mb N`（L006 阈值，缺省 256） |
-| fr_stats | 四层熵剖面 | `--json` |
-| fr_render | 离线回放（D_CRC/PIXEL）/ mp4 / --sim 内核重演 | `--record` `--sim` |
-| fr_as / fr_dis | .fr↔.frb 互转 | `-o` |
-| fr_assets | 流抽资产 kit / 从文件建 kit（assets.json 含 src 语义名——fr_dump --names 可 join） | `-o` `--from-files` |
-| fr_prec | :px↔:full 精度档转换 | |
-| fr_delta_check | 增量流对拍（Tier1 展开 etc.） | |
-| fr_diff | 两流帧对齐 diff（首分歧帧+行级差异） | `--frames a-b` `--first-only` |
+"依赖"一列：**无** = 纯 Python（标准库），clone 下来就能用，只能处理**已有的流**；
+**fork** = 需要构建好的魔改 `love.exe`（`megasource/build115/love/Release/`，源码与构建见
+[wangeek/love-fr](https://github.com/wangeek/love-fr)）。
+
+| 工具 | 一句话 | 关键参数 | 依赖 |
+|---|---|---|---|
+| fr_dump | 流→canonical 文本/摘要（判据素材） | `--frames a-b` `--stats` `--strip-assets` `--geo` `--names assets.json` | 无 |
+| fr_check | 内置校验 + FileCheck 判据 | `checks.txt` `--strict` | 无 |
+| fr_lint | 结构诊断（幻资产/帧序/对账/不可判定流） | `--dream`（dream 流口径）`--max-line-mb N`（L006 阈值，缺省 256） | 无 |
+| fr_stats | 四层熵剖面 | `--json` | 无 |
+| fr_render | 离线回放（D_CRC/PIXEL）/ mp4 / --sim 内核重演 | `--record` `--sim` | **fork**；`--record` 另需 ffmpeg（路径写死在 `tools/fr_render.py`） |
+| fr_as / fr_dis | .fr↔.frb 互转 | `-o` | 无 |
+| fr_assets | 流抽资产 kit / 从文件建 kit（assets.json 含 src 语义名——fr_dump --names 可 join） | `-o` `--from-files` | 无 |
+| fr_prec | :px↔:full 精度档转换 | | 无 |
+| fr_delta_check | 增量流对拍（Tier1 展开 etc.） | | 展开本身无依赖；与 C 实现交叉对拍那一项需 **fork** |
+| fr_diff | 两流帧对齐 diff（首分歧帧+行级差异） | `--frames a-b` `--first-only` | 无 |
+
+没构建引擎时，仓库里会有 48 项测试直接失败（它们不自动跳过），详见 README 的"依赖"。
 
 ## 9. MCP 工具面（agent 直调）
 
@@ -199,6 +209,9 @@ D_CRC 判据不适用（含未播种随机），**判据面退化为结构锚行
 
 全量字节体获取（转 .frb/抽资产/重渲染等文件级消费）：CLI `python tools/fr_dump.py <流>`
 （不带 --strip-assets，输出=canonical 原文）。
+
+依赖：MCP 服务本身只用标准库。三件里**只有 `fr_record` 需要构建好的引擎**；`fr_read` 与
+`fr_diff` 处理已有的流，不构建引擎也能用。
 
 ### 调用示例（实测返回，非编造）
 

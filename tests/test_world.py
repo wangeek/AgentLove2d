@@ -1,7 +1,19 @@
 # tests/test_world.py —— 无限流地牢 world runner（信令/比例/状态机）
+import os
 import re
 
 import pytest
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 依赖声明：下面两项用 dream/kit_heroes，其 assets.txt（字节体）按设计不入库。
+# 缺它时 load_kit_rows 静默返回空 → 流里无 asset 行 → 信令被 lint 判 L001 不认
+# → headless 房内循环没有出口 → 测试线程永不结束，pytest 进程退不出去
+# （2026-11-24 在不含 kit 的干净 clone 里实测：`pytest tests/` 挂死 900s+）。
+# 所以缺 kit 必须跳过，而不是硬跑。再生方法见 dream/.gitignore。
+needs_kit = pytest.mark.skipif(
+    not os.path.isfile(os.path.join(_ROOT, "dream", "kit_heroes", "assets.txt")),
+    reason="缺 dream/kit_heroes/assets.txt（kit 字节不入库；再生见 dream/.gitignore）")
 
 
 def test_ratio_math():
@@ -41,6 +53,7 @@ def test_signal_scan_triple():
     assert ov == 142
 
 
+@needs_kit
 def test_world_headless_state_machine(tmp_path, monkeypatch):
     """headless 三房+死亡：Fake LLM 脚本化——房 1/2 各 pass 三连，房 3 over。"""
 
@@ -101,6 +114,7 @@ def test_world_headless_state_machine(tmp_path, monkeypatch):
     assert "0.94" in chat or "0.93" in chat
 
 
+@needs_kit
 def test_world_idle_gate_ends_whole_run(tmp_path, monkeypatch):
     """静默收尾闸=整局 return，不是 break 开新房（2026-11-01 跳层 bug 回归）。
 
