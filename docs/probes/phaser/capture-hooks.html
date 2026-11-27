@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh">
+<meta charset="utf-8">
+<title>Phaser 捕获挂点：对象层上下文 × 节点层几何</title>
+<body>
+<pre id="out">running…</pre>
+<script src="/phaser.min.js"></script>
+<script type="module">
+// 取证材料：捕获该挂在哪一层？由 run.mjs 驱动。结论与对账表见
+// docs/plans/2026-11-27-multi-frontend-phaser.md「捕获挂点」一节。
+//
+// 要回答两个问题（决定 capture.js 的方案）：
+//   Q-A "游戏对象层设当前对象、节点层取用"通不通？——形状类在节点层没有身份，
+//       需要对象层 renderWebGLStep 先记下"现在是谁"。
+//   Q-B 带纹理对象的几何，在 SubmitterQuad.run 返回后读变换节点，是不是当前对象的？
+//
+// 判定方式不靠"看起来对"：每笔都拿**对象的独立事实**（x/y/宽高/文字/颜色，直接读对象属性）
+// 与**节点层读到的几何**对账，逐笔给出 OK/失配。
+const q = new URLSearchParams(location.search);
+const FRAMES = Number(q.get("frames")) || 8;
+const STEP = 1000 / 60;
+
+const rows = [];              // 对账结果
+let cur = null;               // 当前对象（由对象层设置）
+let recordOn = false;         // 是否开始记录
+let frameNo = 0;              // 当前帧号（0 起）
+let stopped = false;          // 满帧收尾后置位，停止步进
+let cam = null;
+
+function num(v) { return typeof v === "number" ? +v.toFixed(2) : v; }
+
+/** 对象的独立事实：期望的屏幕几何（世界坐标经相机滚动，未含旋转/缩放以外的变换）。 */
+function expectOf(go) {
+  const sx = cam.scrollX, sy = cam.scrollY;
+  const x = go.x - sx, y = go.y - sy;
+  if (go.type === "Image" || go.type === "Sprite") {
+    const w = (go.frame ? go.frame.width : go.width) * go.scaleX;
+    const h = (go.frame ? go.frame.height : go.height) * go.scaleY;
+    // 注意：这里 x 不减相机滚动（统一在下面 px/py 里扣一次）
+    const x = go.x, y = go.y;
+    // 坐标口径：顶层对象的 x,y 是世界坐标；父容器内的子对象 x,y 是**相对父容器**的
+    // （已含父容器位置），相机滚动只在最外层扣一次。
+    const px = go.parentContainer ? go.parentContainer.x - sx : -sx;
+    const py = go.parentContainer ? go.parentContainer.y - sy : -sy;
+    return { kind: "quad", x0: px + x - w / 2, y0: py + y - h / 2,
+             x1: px + x + w / 2, y1: py + y + h / 2, label: go.name };
+  }
+  if (go.type === "Text") {
+    return { kind: "quad", x0: x, y0: y, x1: x + go.width, y1: y + go.height,
+             label: JSON.stringify(go.text) };
+  }
+  if (go.type === "Rectangle") {
+    return { kind: "rect", x: x - go.width / 2, y: y - go.height / 2,
+             w: go.width, h: go.height, label: go.name };
+  }
+  return { kind: "?", label: go.name };
+}
+
+function quadOf(node) {
+  if (!node || !node.quad) return null;
+  const a = [];
+  for (let i = 0; i < Math.min(node.quad.length, 8); i++) a.push(+node.quad[i].toFixed(2));
+  return a;
+}
+
+function bbox(qd) {           // quad 的 [x0,y0,x1,y1]（轴对齐时成立）
+  const xs = [qd[0], qd[2], qd[4], qd[6]], ys = [qd[1], qd[3], qd[5], qd[7]];
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+function cmp(a, b) { return Math.abs(a - b) < 0.51; }   // roundPixels → 允许半像素
+
+function wrap() {
+  const nodes = game.renderer.renderNodes._nodes;
+  const done = new Set();
+  // —— 对象层：包 Image/Rectangle…/原型链上的 renderWebGLStep，设置当前对象 ——
+  const types = new Set();
+  const walk = (o) => { types.add(o.type); (o.list || []).forEach(walk); };
+  game.scene.getScene("s").children.list.forEach(walk);
+  for (const t of types) {
+    const go = game.scene.getScene("s").children.list.find((o) => o.type === t);
+    let proto = Object.getPrototypeOf(go);
+    while (proto && !Object.prototype.hasOwnProperty.call(proto, "renderWebGLStep")
+           && proto !== Object.prototype) proto = Object.getPrototypeOf(proto);
+    if (!proto || done.has(proto)) continue;
+    done.add(proto);
+    const orig = proto.renderWebGLStep;
+    proto.renderWebGLStep = function (...args) {
+      const prev = cur;
+      cur = this;                                    // ← 设置当前对象
+      try { return orig.apply(this, args); }
+      finally { cur = prev; }
+    };
+  }
+  // —— 节点层：在 run 返回后读几何，与当前对象（或参数里的对象）对账 ——
+  for (const name of ["SubmitterQuad", "FillRect"]) {
+    const inst = nodes[name];
+    const p = Object.getPrototypeOf(inst);
+    const orig = p.run;
+    p.run = function (...args) {
+      const r = orig.apply(this, args);
+      if (recordOn && cur) {
+        const go = args.find((a) => a && typeof a.type === "string") || cur;
+        const withQuad = args.filter((a) => a && a.quad).map(quadOf).filter(Boolean);
+        const got = withQuad[withQuad.length - 1];    // 取最后一个是"刚算的"
+        const exp = expectOf(go);
+        let ok = null, why = "";
+        if (exp.kind === "quad" && got) {
+          const b = bbox(got);
+          ok = cmp(b[0], exp.x0) && cmp(b[1], exp.y0) && cmp(b[2], exp.x1) && cmp(b[3], exp.y1);
+          why = `got ${b.join(",")}  exp ${[exp.x0, exp.y0, exp.x1, exp.y1].join(",")}`;
+        } else if (exp.kind === "rect" && got) {
+          const b = bbox(got);
+          ok = cmp(b[0], exp.x) && cmp(b[1], exp.y) && cmp(b[2], exp.x + exp.w)
+            && cmp(b[3], exp.y + exp.h);
+          why = `got ${b.join(",")}  exp ${[exp.x, exp.y, exp.x + exp.w, exp.y + exp.h].join(",")}`;
+        } else if (got) {
+          ok = true; why = "(几何已取到，无独立期望值可比)";
+        }
+        rows.push({
+          frame: frameNo,
+          node: name, go: go.type + (go.name ? ":" + go.name : ""),
+          viaArg: !!args.find((a) => a && typeof a.type === "string"),
+          viaCtx: !args.find((a) => a && typeof a.type === "string"),
+          ok, why,
+          text: typeof go.text === "string" ? go.text : undefined,
+          color: go.fillColor !== undefined ? go.fillColor : undefined,
+        });
+      }
+      return r;
+    };
+  }
+}
+
+class S extends Phaser.Scene {
+  constructor() { super("s"); }
+  create() {
+    this.add.image(40, 40, "px").setName("image");
+    this.add.sprite(120, 40, "px").setName("sprite").setScale(2, 1);
+    this.add.text(40, 90, "HP 87", { font: "16px monospace" }).setName("text");
+    this.add.rectangle(200, 40, 32, 16, 0x00ff00).setName("rect");
+    this.add.rectangle(260, 40, 24, 48, 0xff00ff).setName("rect2");
+    this.add.container(300, 120, [
+      this.add.image(0, 0, "px").setName("container-child-image"),
+    ]).setName("container");
+    cam = this.cameras.main;
+    cam.setScroll(10, 20);
+    this.n = 0;
+  }
+  update() {
+    if (recordOn && ++this.n >= FRAMES) finish();
+  }
+}
+
+async function finish() {
+  if (!recordOn || stopped) return;       // 只收尾一次
+  stopped = true;
+  await new Promise((r) => requestAnimationFrame(r));
+  // 只留稳态记录（frame ≥ 2）：首帧含节点初始化；update 先于渲染执行，
+  // 帧号可能差一，所以多留一帧余量
+  const steady = rows.filter((r) => r.frame >= 2);
+  const uniq = [];
+  const seenKey = new Set();
+  for (const r of steady) {
+    const k = r.node + "|" + r.go + "|" + r.ok + "|" + r.why;
+    if (seenKey.has(k)) continue;
+    seenKey.add(k); uniq.push(r);
+  }
+  const bad = steady.filter((r) => r.ok === false).length;
+  const out = {
+    phaser: Phaser.VERSION, records: rows.length, mismatches: bad,
+    unique: uniq.sort((a, b) => (a.node + a.go).localeCompare(b.node + b.go)),
+  };
+  document.getElementById("out").textContent = JSON.stringify(out);
+  await fetch("/report", { method: "POST", body: JSON.stringify(out) });
+  await fetch("/done", { method: "POST" });
+}
+
+function boot() {
+  game.textures.createCanvas("px", 1, 1);
+  const c = game.textures.get("px").getContext();
+  c.fillStyle = "#fff"; c.fillRect(0, 0, 1, 1);
+  game.textures.get("px").refresh();
+  game.scene.add("s", S, false);
+  game.scene.start("s");
+  const waitRunning = () => {
+    if (!(game.loop.started && game.loop.running)) { requestAnimationFrame(waitRunning); return; }
+    game.loop.sleep(); game.loop.smoothStep = false;
+    game.loop.lastTime = 0; game.loop.time = 0;
+    let k = 0;
+    const tick = () => {
+      if (stopped) return;
+      if (k === 0) wrap();                 // 首帧前包（节点已建）
+      game.loop.step(++k * STEP);          // 这一拍渲染的是第 frameNo 帧
+      frameNo = k;                         // 下一拍渲染第 k 帧（0 起）
+      if (k === 1) recordOn = true;        // 第 0 帧渲染完之后才开始记
+      setTimeout(tick, 0);
+    };
+    setTimeout(tick, 0);
+  };
+  waitRunning();
+}
+
+const game = new Phaser.Game({
+  type: Phaser.WEBGL, width: 320, height: 240, parent: document.body,
+  scene: { create: boot, key: "boot" },
+});
+</script>
+</body>
+</html>

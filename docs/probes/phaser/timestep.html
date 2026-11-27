@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh">
+<meta charset="utf-8">
+<title>Phaser 帧步长探针</title>
+<body>
+<pre id="out">running…</pre>
+<script src="/phaser.min.js"></script>
+<script type="module">
+// 取证材料：Phaser 的 update(time, delta) 能不能钉成固定、可复现的序列？
+// 由 run.mjs 驱动（无头浏览器打开本页）。结论与数据见
+// docs/plans/2026-11-27-multi-frontend-phaser.md「时间基准」一节。
+//
+// Q1 步长：auto 模式量 rAF 自然节奏；manual 模式量"虚拟时钟"配方下的 delta 分布，
+//         并给逐帧 (time, delta) 的序列哈希——两次运行哈希相同即"运行确定"。
+// Q2 入口：三处挂钩点各自能看见什么（只数次数）。
+//   a) 游戏对象的 RENDER 事件（对象级）
+//   b) 场景的 RENDER 事件（列表级）
+//   c) 渲染器的 render 方法（命令级）
+const q = new URLSearchParams(location.search);
+const FRAMES = Number(q.get("frames")) || 240;
+const MODE = q.get("mode") || "auto";
+
+const deltas = [];          // update 实收 delta（= 平滑之后）
+const raws = [];            // loop.rawDelta（= 平滑之前的原值）
+const wall = [];            // 相邻 update 的墙钟差
+const times = [];           // update 实收的 time（应等于我传的虚拟时钟）
+let lastT = 0;
+let hook = { prerender: 0, listRender: 0, rendererRender: 0 };
+let renderEntry = null;     // 实际存在的渲染器类型
+
+class Probe extends Phaser.Scene {
+  constructor() { super("probe"); }
+  create() {
+    // 固定种子（排除随机源对步长统计的干扰——本探针不关心画面）
+    this.rnd = new Phaser.Math.RandomDataGenerator(["fr-probe"]);
+    this.gfx = this.add.graphics();
+    this.img = this.add.rectangle(100, 100, 32, 32, 0xff0000);
+    this.txt = this.add.text(10, 10, "x", { font: "16px monospace" });
+    renderEntry = this.game.renderer.type === Phaser.WEBGL ? "WEBGL"
+      : this.game.renderer.type === Phaser.CANVAS ? "CANVAS" : "HEADLESS(" + this.game.renderer.type + ")";
+
+    // a) 对象级：每个 GameObject 的 RENDER 事件（按对象挂）
+    this.img.on(Phaser.GameObjects.Events.RENDER, () => { hook.prerender++; });
+
+    // b) 列表级：display list 的 RENDER 事件（按场景挂）
+    this.events.on(Phaser.Scenes.Events.RENDER, () => { hook.listRender++; });
+
+    // c) 命令级：直接包渲染器的 render 方法，数调用次数
+    const r = this.game.renderer;
+    const orig = r.render.bind(r);
+    r.render = function (...a) { hook.rendererRender++; return orig(...a); };
+
+    this.frames = 0;
+  }
+  update(time, delta) {
+    deltas.push(delta);
+    raws.push(this.game.loop.rawDelta);
+    times.push(time);
+    if (lastT) wall.push(performance.now() - lastT);
+    lastT = performance.now();
+    // 每帧固定几笔绘制（让渲染路径真的有事做）
+    this.gfx.clear().fillStyle(0x00ff00, 1).fillRect(this.frames % 200, 50, 16, 16);
+    this.frames++;
+    if (this.frames >= FRAMES) finish("update");
+  }
+}
+
+function stats(a) {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const sum = a.reduce((x, y) => x + y, 0);
+  const pick = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return {
+    n: a.length, min: +s[0].toFixed(4), max: +s[s.length - 1].toFixed(4),
+    median: +pick(0.5).toFixed(4), p95: +pick(0.95).toFixed(4),
+    mean: +(sum / a.length).toFixed(4),
+  };
+}
+
+function distinct(a) {
+  const m = new Map();
+  for (const v of a) m.set(+v.toFixed(3), (m.get(+v.toFixed(3)) || 0) + 1);
+  return Object.fromEntries([...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6));
+}
+
+/** FNV-1a over a JSON string → 8 位十六进制（只为"两次运行是否相同"，不做安全用途）。 */
+function fnv(series) {
+  const s = JSON.stringify(series);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+async function finish(reason) {
+  // 给渲染管线最后一拍
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const report = {
+    phaser: Phaser.VERSION, mode: MODE, renderer: renderEntry, reason,
+    frames: deltas.length,
+    delta: stats(deltas), deltaDistinct: distinct(deltas),
+    rawDelta: stats(raws), rawDistinct: distinct(raws),
+    // 序列哈希：两次运行是否逐帧同一串 (time, delta)，比哈希即可
+    seriesHash: fnv(times.map((t, i) => [t, deltas[i]])),
+    // 与理想值的最大偏差（量出来，不只给真假；不用 === 判浮点）
+    maxDev: {
+      delta: Math.max(...deltas.map((d) => Math.abs(d - STEP))),
+      time: Math.max(...times.map((t, i) => Math.abs(t - (i + 1) * STEP))),
+    },
+    timeStepExact: deltas.every((d) => Math.abs(d - STEP) < 1e-9)
+                   && times.every((t, i) => Math.abs(t - (i + 1) * STEP) < 1e-9),
+    timeFirstLast: [times[0], times[times.length - 1]],
+    smoothStepEnabled: game.loop.smoothStep,
+    wall: stats(wall),
+    hook,
+    config: {
+      fps: game.loop.actualFps ? +game.loop.actualFps.toFixed(1) : null,
+      targetFps: game.config.fps, smoothStep: game.config.smoothStep,
+      "time.delta-history": undefined,
+    },
+  };
+  document.getElementById("out").textContent = JSON.stringify(report);
+  await fetch("/report", { method: "POST", body: JSON.stringify(report) });
+  await fetch("/done", { method: "POST" });
+}
+
+const config = {
+  type: Phaser.AUTO, width: 320, height: 240, parent: document.body,
+  fps: { target: 60, forceSetTimeOut: false },   // 默认 rAF 驱动
+  render: { antialias: false, roundPixels: true },
+  scene: [Probe],
+};
+const game = new Phaser.Game(config);
+
+let STEP = 1000 / (Number(q.get("hz")) || 60);   // 每拍步长（ms）：虚拟时钟每拍 +STEP
+
+if (MODE === "manual") {
+  // 手动步进（按 TimeStep.step 源码的实际签名来：step(time) 只有一个参数，
+  // delta = time − lastTime，第二个参数会被忽略）。
+  //
+  // 关键坑（实测）：READY 事件早于游戏循环启动——在 READY 里调 sleep() 时
+  // running 仍为 false，sleep 的 `running && …` 直接短路，等于没调；随后 Phaser
+  // 调 loop.start() 照常开 rAF，结果两条循环交替推进同一个 TimeStep。
+  // 所以不靠事件时序，**以状态为准**：等 started && running 成立再 sleep。
+  game.events.once(Phaser.Core.Events.READY, () => {
+    const whenRunning = () => {
+      if (!(game.loop.started && game.loop.running)) {
+        requestAnimationFrame(whenRunning);
+        return;
+      }
+      game.loop.sleep();                 // 此时 running=true，才会真的停 rAF
+      // 关掉平滑器：它按 targetFps 截断 delta（重置后还有 120 拍的冷却期），
+      // 非 60Hz 的步长会被改写；确定录制要的是 delta 原样透传。
+      game.loop.smoothStep = false;
+      // 虚拟时钟原点钉为 0：不取真实 lastTime——否则传给 update 的 time
+      // 每次运行都不同，步长恒定也不等于运行确定。
+      game.loop.lastTime = 0;
+      game.loop.time = 0;
+      let k = 0, vt = 0;
+      let left = FRAMES;
+      const tick = () => {
+        // vt = k × STEP（乘法，不累加）：累加 240 次会漂出舍入误差
+        vt = ++k * STEP;
+        game.loop.step(vt);              // 每拍恰好 +STEP → delta 恒等于 STEP
+        if (--left > 0) setTimeout(tick, 0); else finish("manual");
+      };
+      setTimeout(tick, 0);
+    };
+    whenRunning();
+  });
+}
+</script>
+</body>
+</html>
