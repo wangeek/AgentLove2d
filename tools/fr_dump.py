@@ -16,9 +16,11 @@
               asset 行 hex 体剥离成 '# … (+NB hex)' 摘要行（B=真字节数；
               观察面省流量，全量字节体不带本参数走 CLI 管道级消费）
   --geo       每条 draw 行后追加 '# geo: …' 派生注释行（D15）：用流内
-              asset/quad 登记算屏幕有效矩形（quad=0 整图 / quad=k 切片，
-              rect=(x-ox*sx, y-oy*sy, qw*sx, qh*sy)，数值 %.2f；rot≠0 注记
-              不展开）。读侧派生不进流；登记表取自过滤前全会话
+              asset/quad 登记算屏幕有效矩形（quad=0 整图 / quad=k 切片）。
+              rot=0 → rect=(x-ox*sx, y-oy*sy, qw*sx, qh*sy)，数值 %.2f；
+              rot≠0 → 定长四角行（规格 §7.1）：at= rot= deg= c=(四角)
+              len=边长 ortho=正交残差（1=剪切，0=纯仿射）。读侧派生不进流；
+              登记表取自过滤前全会话
   --names <assets.json>
               资产语义名 join（D15 方案四）：fr_assets --from-files 产出的
               目录单 src 字段 → geo 行/资产摘要行显示 tex=1(icon.png)；
@@ -32,6 +34,7 @@
 退出码：0 成功；1 输入失败（SessionError / ValueError / OSError，
 消息前缀 "fr-dump: " 到 stderr）；2 用法错误。
 """
+import math
 import os
 import re
 import sys
@@ -113,8 +116,10 @@ def _nm(names, aid):
 
 def _geo_annotate(text, imgs, quads, names=None):
     """dump 文本逐行扫描：draw 行后插 '# geo: …' 派生行（D15）。
-    计算值 %.2f；引用行内 token 原样；rot≠0/未登记如实注记不展开。
-    '# ' 前缀不参与再 parse（与 --strip-assets 摘要同构）。"""
+    计算值 %.2f；引用行内 token 原样；未登记如实注记不展开。
+    rot=0 → rect= 行（形态与 D15 逐字节相同，既有判据/golden 不受影响）。
+    rot≠0 → 定长四角行（规格 §7.1，v1.6）：at= rot= deg= c=(四角) len= ortho=，
+    字段固定有序，便于 fr_check 的子串判据；`# ` 前缀不参与再 parse。"""
     out = []
     dno = 0
     for ln in text.split("\n"):
@@ -134,10 +139,6 @@ def _geo_annotate(text, imgs, quads, names=None):
             sx, sy, ox, oy = float(t[6]), float(t[7]), float(t[8]), float(t[9])
         except ValueError:
             continue
-        if rot != 0.0:
-            out.append("# geo: d%d tex=%d%s at=%s,%s rot=%s（非轴对齐不展开）"
-                       % (dno, tex, _nm(names, tex), t[3], t[4], t[5]))
-            continue
         if tex not in imgs:
             out.append("# geo: d%d tex=%d%s（未登记，不展开）"
                        % (dno, tex, _nm(names, tex)))
@@ -156,6 +157,28 @@ def _geo_annotate(text, imgs, quads, names=None):
         else:
             out.append("# geo: d%d tex=%d%s quad=%d（quad 未登记，不展开）"
                        % (dno, tex, _nm(names, tex), quad))
+            continue
+        if rot != 0.0:
+            # §7.1 闭式四角：P(u,v) = (cos·sx·du − sin·sy·dv + x, sin·sx·du + cos·sy·dv + y)
+            cs, sn = math.cos(rot), math.sin(rot)
+            def _p(u, v):
+                du, dv = u - ox, v - oy
+                return (cs * sx * du - sn * sy * dv + x,
+                        sn * sx * du + cs * sy * dv + y)
+            p0, p1 = _p(0.0, 0.0), _p(qw, 0.0)
+            p2, p3 = _p(qw, qh), _p(0.0, qh)
+            # 两条边长与正交残差（I2/I3/I4）：e0=P1−P0、e3=P3−P0
+            e0 = (p1[0] - p0[0], p1[1] - p0[1])
+            e3 = (p3[0] - p0[0], p3[1] - p0[1])
+            l0 = math.hypot(*e0)
+            l3 = math.hypot(*e3)
+            ortho = (abs(e0[0] * e3[0] + e0[1] * e3[1]) / (l0 * l3)) if l0 and l3 else 0.0
+            out.append("# geo: d%d tex=%d%s at=%s,%s rot=%s deg=%.4f"
+                       " c=(%.2f,%.2f)(%.2f,%.2f)(%.2f,%.2f)(%.2f,%.2f)"
+                       " len=%.2f,%.2f ortho=%.6f（%s）"
+                       % (dno, tex, _nm(names, tex), t[3], t[4], t[5],
+                          math.degrees(rot), p0[0], p0[1], p1[0], p1[1],
+                          p2[0], p2[1], p3[0], p3[1], l0, l3, ortho, src))
             continue
         x0, y0 = x - ox * sx, y - oy * sy
         out.append("# geo: d%d tex=%d%s rect=%.2f,%.2f %.2fx%.2f（%s）"

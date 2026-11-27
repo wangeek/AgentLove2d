@@ -38,7 +38,7 @@ def test_geo_scale_and_offset(monkeypatch, capsys):
 
 
 def test_geo_quad_slice_and_rot(monkeypatch, capsys):
-    """quad 切片（atlas）与 rot≠0 注记。"""
+    """quad 切片（atlas）与 rot≠0 的四角展开（规格 §7.1，v1.6）。"""
     s = fr_dump.fs.parse_text(
         _hdr() + _frame(0, [
             "asset image 1 128 128 00\n",
@@ -50,8 +50,10 @@ def test_geo_quad_slice_and_rot(monkeypatch, capsys):
     assert fr_dump.main(["x.fr", "--geo"]) == 0
     out = capsys.readouterr().out
     assert "# geo: d1 tex=1 rect=10.00,10.00 32.00x32.00（q3 16,16 32x32 @1）" in out
-    # rot≠0：at/rot 取原文 token（%.6f），不展开矩形
-    assert "# geo: d2 tex=1 at=40.000000,40.000000 rot=0.500000（非轴对齐不展开）" in out
+    # rot≠0：定长四角行（at/rot 取原文 token；deg/c/len/ortho 为计算值）
+    assert ("# geo: d2 tex=1 at=40.000000,40.000000 rot=0.500000 deg=28.6479"
+            " c=(40.00,40.00)(152.33,101.37)(90.96,213.70)(-21.37,152.33)"
+            " len=128.00,128.00 ortho=0.000000" in out)
 
 
 def test_geo_unregistered_and_frame_reset(monkeypatch, capsys):

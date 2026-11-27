@@ -3,11 +3,14 @@
 """fr-check：会话校验器 + FileCheck 式判据运行器。
 
 用法:
-    python tools/fr_check.py <in.fr|in.frb> [checks.txt] [--strict]
+    python tools/fr_check.py <in.fr|in.frb> [checks.txt] [--strict] [--geo]
 
   input       输入会话文件，双输入按 magic 自动识别（FRB1=二进制）
   checks.txt  可选 FileCheck 式判据文件（'#' 注释，空行跳过）
   --strict    sha 对账不一致从 WARNING 升级为 FAIL
+  --geo       判据面附加 '# geo:' 派生行（规格 §7.1 / D15）——要锚几何
+              （屏幕矩形、四角、边长、正交残差）时开；不开则判据面与
+              v1.5 完全相同
 
 内置校验（无判据文件也执行）：
   1. canonical 幂等——.fr 输入 dump_text(parse_text(raw))==raw，.frb 输入
@@ -124,6 +127,9 @@ def main(argv):
     strict = "--strict" in args
     if strict:
         args.remove("--strict")
+    geo = "--geo" in args
+    if geo:
+        args.remove("--geo")
     path = args[0] if args else None
     checks = args[1] if len(args) > 1 else None
     if not path:
@@ -136,6 +142,12 @@ def main(argv):
         s, bf = _builtin(raw, strict)
         fails += bf
         lines = fs.dump_text(s).split("\n")
+        if geo:
+            # '# geo:' 派生行（D15 / 规格 §7.1）——判据要锚几何时开这个开关；
+            # 不开则判据面与 v1.5 完全相同（既有判据不受影响）。
+            from tools import fr_dump as fd
+            imgs, quads = fd._asset_table(s)
+            lines = fd._geo_annotate("\n".join(lines), imgs, quads).split("\n")
         directives = []          # [(kind, pat, 判据文件行号), ...]
         if checks:
             with open(checks, encoding="utf-8") as f:

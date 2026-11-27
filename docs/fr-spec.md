@@ -148,6 +148,61 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 
 设计纪律的落点：color/setColor 折进行参数（行自描述）；翻转=sx/sy 负值；canvas 间合成= `draw` 引用 canvas 资产；`rt`/`scissor` 为有序流上的状态行（对齐 love 的 setCanvas/setScissor）。
 
+### 7.1 `draw` 的 `rot` 语义与判据粒度〔v1.6〕
+
+本节**只把已有的唯一语义写下来**（LÖVE `setTransformation` 逐项展开、回放构造、`fr_dump --geo` 三处本已自洽），不改任何字节。
+
+**式子**：`quad=0` 取 `tex` 图像资产尺寸 `(qw,qh)`，`quad≠0` 取该 quad 资产的 `(w,h)`；切片局部像素坐标 `p=(u,v)∈[0,qw]×[0,qh]`（原点在切片左上角）落到屏幕的位置：
+
+```
+A = [[ cos(rot)·sx , −sin(rot)·sy ],
+     [ sin(rot)·sx ,  cos(rot)·sy ]]
+P = (x, y) + A · (p − (ox, oy))
+```
+
+即 `A = R(rot)·S(sx,sy)`、`τ = (x,y) − A·(ox,oy)`——`love.graphics.draw(tex,quad,x,y,rot,sx,sy,ox,oy)` 在 `kx=ky=0` 时的展开。
+
+**约定（逐条写死，缺一条就有歧义）**：
+
+| 项 | 规定 |
+|---|---|
+| 单位 | `rot` 为**弧度**（`f32`，文本 `%.6f`） |
+| 正方向 | 屏幕 y 轴向下，`rot > 0` 为**顺时针** |
+| 支点 | 图上 `(ox,oy)` 这一点恰好落在 `(x,y)`；旋转与缩放的支点都是它 |
+| 复合顺序 | `S` 在内（先沿局部轴拉伸）、`R` 在外、平移最后：`R·S`，**不是** `S·R` |
+| 翻转 | 一律折进 `sx/sy` 的符号；**规范形要求 `sx ≥ 0`**，镜像只放 `sy` |
+| 剪切 | 恒无（`A` 两列必正交）。不可表达者发 `err` 留痕，不得静默近似（见下） |
+| 归零 | `\|rot\| < 1e-6` 时产出端必须写 `0`（否则 `:px` 档 `rot=0` 的尾部省略永不命中） |
+
+正方向自证：`qw=qh=48, ox=oy=24, (x,y)=(100,100), rot=π/4` 时右上角由 `(124,76)` 移到 `(133.94,100.00)`——`y` 增大即向下，顺时针；与 SDL `RenderCopyEx`（度、顺时针）、LÖVE、Phaser、Canvas2D 同向。
+
+**后端对照**（新前端最容易错的一格）：
+
+| 源 API | 映射 |
+|---|---|
+| `SDL_RenderCopyF(tex,NULL,&dst)` | `x=dst.x+dst.w/2, y=dst.y+dst.h/2, rot=0, sx=dst.w/qw, sy=dst.h/qh, ox=qw/2, oy=qh/2` |
+| `SDL_RenderCopyExF(tex,&src,&dst,deg,NULL,FLIP_NONE)` | 同上 + `rot=deg·π/180`（绕 dst 中心转且中心不动 ⟹ `ox=qw/2, oy=qh/2`） |
+| `love.graphics.draw(tex,quad,x,y,r,sx,sy,ox,oy)` | 恒等 |
+
+**判据粒度：参数级，且这是充分的。** 纹理四边形四边由 `A` 的列给出：`e0 = A·(qw,0) = (cos·sx·qw, sin·sx·qw)`、`e3 = A·(0,qh) = (−sin·sy·qh, cos·sy·qh)`。`S` 是对角阵，只沿局部轴缩放、不旋转坐标轴；`R` 在外层统一施加。所以 `sx ≥ 0` 时 **`e0` 的方向恒等于 `rot`**（`sy ≥ 0` 时 `e3` 方向恒为 `rot+π/2`）——「验证 `rot`」与「验证纹理第一条边的朝向」是同一件事，无需像素、无需图像比对，缩放不污染它（`sx=2` 时 `e0` 方向仍等于 `rot`）。
+
+这个等价**只在 `A` 两列正交时成立**（`e0·e3 = 0` 是 `A=R·S` 的充要特征）。父变换一旦合成出剪切，任何 `(rot,sx,sy)` 都只是近似，参数级判据会为假值背书——所以：
+
+- 前端分解矩阵时必须算 `ortho = |a·c + b·d| / (‖(a,b)‖·‖(c,d)‖)`，`ortho > 1e-5` 发 `err "affine:shear <residual>"`，`sx≈0` 或行列式≈0 发 `err "affine:degenerate"`；归约不到任何 out 行的发 `err "draw:unsupported <node>"`。`err` 属 log 段、不进 `d_crc`，零格式变更。
+- 前端从矩阵取参数的规范分解（与 `Matrix.cpp:239` 的 `e[0]=c·sx, e[1]=s·sx, e[4]=−s·sy, e[5]=c·sy, e[12]=x−ox·e[0]−oy·e[4]` 互逆）：
+
+```
+a,b,c,d = A 的两列（Phaser 6 元组 [a,b,c,d,tx,ty]）
+rot = atan2(b, a);  sx = hypot(a, b);  sy = (a·d − b·c) / sx
+x = τx + a·ox + c·oy;  y = τy + b·ox + d·oy
+```
+
+LÖVE 侧 16 元数组索引是 `e[0],e[1],e[4],e[5],e[12],e[13]`，**不是** `e[0..3]`。
+
+**不新增矩阵形 op**：给 `draw` 加 `kx ky` 会破坏 `sealed` 并波及所有解析器与 `:px` 省略表；新开 6 自由度 op 同理。真正表达不了的仿射本来就不该被"验证通过"，发 `err` 是正确处置。要有真实产出再单独立项。
+
+**边界条款（规范性）**：`rot` 的验证**止于行内参数与其几何推论**（`fr_dump --geo` 的角点、边长、正交残差）。旋转后的贴图外观——采样、滤波、边缘质量、mip 选择——**不在 FR 判据范围内**：资产载荷在流内可为占位，渲染器也不在判据链上。因此判据文件不得出现以画面为对象的断言，Agent 不得以「旋转已验证」指称渲染效果。
+
 ## 8. 事件词汇表
 
 - 事件名**直接采用 LÖVE handlers 键名**：`keypressed`、`keyreleased`、`textinput`、`mousepressed`、`mousereleased`、`mousemoved`、`wheelmoved`、`focus`、`visible`、`resize`、`quit`、`filedropped`、`threaderror`……
@@ -195,4 +250,5 @@ print 2 "HELLO" 12.000000 340.000000 0.000000 1.000000 1.000000 255 255 0 255
 - **v1.4**（2026-10-29，B15 帧间增量扩展集）：head 增可选尾 token **`+d`**（增量协商标记；与 :prec 可组合 `:px +d`/单独 full+d——独立于 :prec 的正交开关）；cmd.tbl 扩展段四行（status=ext，**不进 C 目标/不进指纹**——扩展集纪律：协商产物不进基座；指纹按全表算含 ext）：`S <ref>`（same：行集取自 ref 帧，d_crc=锚声明 CRC）、`pd <asset> <k> <param> <abs>`（paramdelta：(asset,k) 行身份绝对值更新，param 白名单 x/y/rot/sx/sy/ox/oy，k=帧内引用序消歧——React key 模型；配对失败编码器降级 rd）、`rdp <pos> "<:px 行>"`（行插入，pos=帧内行序构造性定位，嵌套引号转义 \"\\）、`rdm <pos>`（行删除）。**生产端**：FR_DELTA=1（head 标 +d）+ FR_DELTA_I 周期（缺省 32/ev 帧强制 I）——writer 行集 diff 编辑脚本（pos 不变式：workpiece 前缀恒镜像 cur[0..b)）；捕获侧行缓冲语义不变（增量只发生在写出层）。**判据重述**：D_CRC 锚解码后行集（S 帧=锚声明 CRC）；展开器归 C 生产路径（与 capture_exec_row 同地）。**实测（双场景稳态/帧，:px+d）**：world_map 103.6→4.04 KB（**-96%**）、battle 7.2→4.90 KB（-32%）；@30fps world_map **0.99 Mbps**——云渲染验证档进 KB 级。已知边界：battle 锚形态基准（初始化含 seed 外随机）；pd 编码器优化（身份配对单参改）待精化——本版 rdp 全行。
 - **v1.4.1**（2026-10-30，B18 dream 实测修正——:px 量化域值整则整）：:px 渲染量化从**字段名白名单**（坐标/尺寸：x/y/w/h/ox/oy/r/a1/a2/rx/ry）改为**值整则整**（任意 f32/f64 字段——rot/sx/sy/width 整值写整数，非整保留 %.6f）。动因：dream LLM 直写实测 `D … 0.000000 1.000000 1.000000` 尾巴——白名单漏 rot/sx/sy/width，token 紧张场景（LLM 直写）高精 float 是纯浪费。语义恒定不变（parse 双形态回填等价、qf 域不变）；B14 锚测试同步（rot/sx/sy/width 整值断言改整数形）。跨档归一口径补充登记：.frb 不存档位（B14 既有），px 流 fr→frb→fr 判据=**字段级语义等价**（fr_dis 回 :full 形态），同档 px 文本幂等不变。
 - **v1.5**（2026-10-31，B18 引发——ext 双 Tier 定稿：Tier1 改名四条 + Tier2 对象编辑五条 + 裸形缺省）：ext 扩展集扩至 **9 行型**，分两个 Tier 服务两种生产者。**Tier1 文本编辑集**（程序化压缩，diff 直译；录制端 writer 用）：`S→CP`/`pd→SET`/`rdp→INS`/`rdm→DEL`——编辑器动词风（rdp 撞 RDP 违反命名纪律）；**裸形缺省**：CP ref 缺省=上一帧、SET k 缺省=0、INS pos 缺省=行尾——裸形只存在于 dream chunk 层（LLM 输入侧，parse 有帧上下文回填），canonical 流内恒显式。**Tier2 对象编辑集**（LLM 生成侧融合语义，舞台动词风）：`MOVE`（相对位移 dx dy）/`PLACE`（绝对置位）/`POSE`（整行形态替换——换贴图/quad/颜色，身份随行内容走）/`ENTER`（行尾插入=最上层，新对象无寻址）/`EXIT`（对象离场）——对象寻址 (asset,k) k 可省=0、位置盲、帧内完整（一行只说本帧事实，零时间域）；dream seal 侧确定性降级为 Tier1（seal 产物零 Tier2，C 展开器未实装前消费链零感知）。**CP d_crc 锚字面量 `same:<ref>` 不随改名变**（历史流兼容，fr_session.cpp:363 同参）。附带修复：fr_session parse/dump raw 形态不对称（parse 产 (op,{raw}) 元组、dump 只认裸 dict——S 回环丢 ref）；C 文本收容裸 CP（ref 回填 idx-1）。禁止项维持：LOOP 家族（一行治多帧破帧完整性）、时间域参数（MOVE n 等——第三次还魂的意图语言，正式否决）。
+- **v1.6**（2026-11-28，`draw` 的 `rot` 语义入规范——纯文档，零字节变更）：新增 §7.1，把"事实上已经唯一但没写"的语义写死——`A = R(rot)·S(sx,sy)`、`P = (x,y) + A·(p−(ox,oy))`；约定七条（弧度/顺时针/支点 (ox,oy)/复合序 R·S/翻转折进符号且规范形 `sx≥0`/恒无剪切/`|rot|<1e-6` 写 0）；后端对照（SDL `RenderCopyF`/`RenderCopyExF` → `draw`）；**判据粒度论证**：`S` 对角 ⟹ `e0` 方向恒等于 `rot`，参数级判据等价于纹理边角度判据，缩放不污染；该等价只在两列正交时成立，故剪切必须发 `err "affine:shear <residual>"`（`sx≈0`/det≈0 → `err "affine:degenerate"`，归约不到 out 行 → `err "draw:unsupported <node>"`），`err` 属 log 段不进 `d_crc`；规范分解式（`rot=atan2(b,a)`、`sx=hypot(a,b)`、`sy=det/sx`）与 LÖVE 16 元索引 `e[0],e[1],e[4],e[5],e[12],e[13]`；**边界条款**：旋转验证止于参数与其几何推论，采样/滤波/边缘质量/mip 不在判据范围，判据文件不得以画面为对象、Agent 不得以「旋转已验证」指称渲染效果。不新增矩阵形 op（`draw` 加 `kx ky` 破坏 sealed 并波及 `:px` 省略表；表达不了的仿射正确地应当发 err 而非被"验证通过"）。配套工具：`fr_dump --geo` 对 `rot≠0` 展开定长四角行（`rect=` 行对 `rot=0` 逐字节不变）；`fr_check` 新增 `--geo`（判据可引用 `# geo:` 行）。
 - **v1.4-draft**（2026-10-29，B15 帧间增量——扩展集草案，未实现先立语义）：帧体首行允许 `S <ref>`（same/skip 行）——本帧行集 = 帧 ref 行集的引用复制（ref < 本帧号；链式合法 `S 3` 后帧 4 可 `S 4`）。**判定来源=录制端事件谓词**（本帧无 ev 且 out 行集与参考帧逐行同 → 发 S；有 ev 强制开新链——事件边界纪律，设计附录 §5.1）；**消费端必须防御性验证**（解引用行集逐行比对，不匹配 → SessionError——S 是可验证声明不是信任）。d_crc 锚定重述：S 帧 d_crc = CRC("S <ref>")（锚声明本身）；**解码后行集级语义比对不受影响**（fr-session/判据器解 S 后按全量行集工作）。周期 checkpoint：每 N 帧强制全量（N 进 head 可选列或工具参数，缺省 30）——seek/加入点保证。out 段行级 delta（P/- 操作）与 paramdelta 本草案不含，待 skip 落地后按 B13 时间层数据裁决。实测预期（B13 时间层）：world_map same 占比近 1、battle 0.86——稳态帧 103.6KB → ~10B。
