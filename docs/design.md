@@ -14,6 +14,7 @@
 | 追架构依据、修决策 | `docs/decisions.md` | 决策台账 D1–D16（追加式） |
 | 查魔改实现细节（挂点/源码行号/开放清单） | `docs/love2d-gap.md` | 魔改设计与取证 |
 | 取魔改引擎的源码、照着构建 | [wangeek/love-fr](https://github.com/wangeek/love-fr)（`fr-capture` 分支） | 捕获层代码的公开镜像；**捕获层改动必须推到这里** |
+| 给另一个宿主（web 2D）做前端 | [wangeek/phaser-fr](https://github.com/wangeek/phaser-fr) + `docs/plans/2026-11-27-multi-frontend-phaser.md` | 第二个前端试点（D17）；`gen_js` 产 JS 表数据面 |
 | 查渲染端设计与流载体 | `docs/love2d-renderer.md` | 消费端设计 |
 
 哪些工具离开引擎还能用、测试在什么条件下能跑：见 README 的"依赖"。

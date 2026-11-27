@@ -40,7 +40,8 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - 无限流地牢（B18 M2b，实验态）：`bash dream/run_world_ds.sh`（DeepSeek 真交互实录：EVINJ 协议行抓注入路径+方向键序列）或 `python -m dream.world --llm --out run.fr --kit dream/kit_heroes [--headless] [--rooms-max N]`——room=上下文边界（每房重建会话只传房间数/积分两数），pass/over 三连信令+lint 门结算，帧数上限兜底，积分杠杆（奖励:遇怪=0.3+0.7×完美度）；产物 run.fr=整局存档（.chatlog 各房对话）。**出口闸（2026-11-24）**：总时长 `--max-total`、静默 `--max-idle`、连续展开失败 `--max-bad-bursts` 三闸都在房内循环顶部每轮必检（headless 也生效——此前只在窗口模式的无事件轮检查，LLM 一直不给合法信令就无限跑、`--max-total` 不生效）；LLM 调用抛异常由 main 接住并收尾（退出码 3，chatlog 记 `RUN ABORTED`）；失败 burst 的回滚只撤本 burst。仍为实验态：真 LLM 的 headless 回归未覆盖
 - 资产 kit 抽取（B18）：`python tools/fr_assets.py <in.fr|in.frb> -o <kit_dir>`——asset 行抽取/renumber/目录单（assets.json 喂 LLM + assets.txt 回放）；**从文件建 kit**：`python tools/fr_assets.py --from-files <kit_dir> <a.png> [b.ttf ...]`（PNG 头解析 w/h、编码字节原样登记、assets.json 记 src 语义名）；kit 字节不入库按需再生（dream/.gitignore）
 - 流诊断器（B18）：`python tools/fr_lint.py <in.fr> [--dream] [--max-line-mb N]`——L001 幻资产/L002 d_crc 对账/L004 帧行序（--dream 加 L003 st 口径）/**L006 不可判定流**（行内 NUL/单行超 256MB/非法 UTF-8，流式扫描越界即返——20.4GB 坏流 0.11s 报出行号）；退出码 0=全绿
-- Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` 再生双目标，改表后必跑）
+- Python 工具（fr-*）：`python tools/<tool>.py ...`（fr-gen 已交付：`python -m tools.fr_gen.gen_python` / `gen_c` / `gen_js` 再生三目标，改表后必跑；`gen_js` 产 JS 表数据面并同步到 `../phaser-fr/src/`）
+- 前端仓 `phaser-fr`（D17 第二宿主试点）：`npm test` = 跨实现验收（吃主仓 golden 流：逐行 round-trip + 逐帧 d_crc 重算）；v0 只覆盖 full 档文本流，**捕获/回放未做**（见 docs/plans/2026-11-27-multi-frontend-phaser.md）
 - 会话封装互转（fr-as/fr-dis 已交付）：`python tools/fr_as.py <in.fr> -o out.frb` / `python tools/fr_dis.py <in.frb>`
 - dump 与判据（fr-dump/fr-check 已交付）：`python tools/fr_dump.py <in.fr|in.frb> [--frames a-b] [--stats] [--strip-assets] [--geo] [--names assets.json]`（strip=asset 行 hex 体剥成 `# … (+NB hex)` 摘要，观察面 3.0MB→10.5KB；geo=draw 行后插 `# geo: rect=…` 屏幕有效矩形派生行（D15 读侧派生不进流；资产预处理只建议不代做——见 fr_record description）；names=kit 目录单 src 语义名 join 进摘要/geo 行）/ `python tools/fr_check.py <in.fr|in.frb> [判据文件] [--strict]`
 - MCP 工具面（2026-11-02 精简三件）：`fr_record`（env 组装+headless 录制）/`fr_read`（canonical 文本，默认剥资产 hex，frames 选帧，封顶 100KB，**描述内含 op 词汇表**——版本随 cmd.tbl 表头，测试防漂移）/`fr_diff`（首分歧帧+行 diff）——服务 `tools/fr_mcp.py`，工作区 `.mcp.json` 已注册 `fr-tools`；全量与结构化消费走 CLI（grep/check/stats 由 agent 对 read 结果自做）
@@ -56,7 +57,7 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - `docs/` — 规格真源与决策台账（中文）
 - `tables/` — `cmd.tbl`（IR 单一真源，命令集 v1.2 对照 LÖVE 11.5 源码定稿）
 - `tools/` — fr-* 工具族（Python；C 编解码由 fr-gen 生成）
-- `render/` — fr-gen 生成的 C 编解码落位（fr_codec.h/.c + fr_selftest.c 跨架构字节自测）；L0 产流原型在 `l0/`
+- `render/` — fr-gen 生成的 C 编解码落位（fr_codec.h/.c + fr_selftest.c 跨架构字节自测）；**`render/js/` = JS 前端目标**（`fr_table.mjs` 生成物 + `codec.mjs`/`conformance.mjs` 手写单源，由 `gen_js` 同步到 `../phaser-fr/src/`）；L0 产流原型在 `l0/`
 - `tests/` — round-trip 回归、对拍
 - `love2d/` — LÖVE 11.5 素材（win64 运行时 / 官方 11.5 源码 / wiki dump；运行时二进制不入 git；**源码必须与锁定运行时同版本**）
 
