@@ -1,7 +1,8 @@
 # 2026-11-27 多前端：Phaser（web 2D）试点
 
 决策：`docs/decisions.md` D17 ｜ 前端仓库：`git@github.com:wangeek/phaser-fr`（`<引擎>-fr` 命名）
-状态：**v0 已交付（编解码 + 跨实现验收）；捕获与回放未做**
+状态：**v0.1 已交付（编解码 + 跨实现验收 + 捕获 + 回放 + 四段验收全绿）**，前端仓提交 `3ea222f`；
+落地记录与新增实测见文末「P1 落地记录」。未做项：Graphics 路径捕获、旋转、atlas 切片、scissor 回放、靶流回填 golden。
 
 ## 为什么是 Phaser，不是 three.js
 
@@ -58,24 +59,28 @@ wangeek/phaser-fr/               ← 前端：只做捕获 + 回放
 | `:px` 紧凑档 | 不认 | conformance 遇 `:px` 明确 SKIP；先用 `fr_prec` 转 full |
 | `.frb` 二进制 | 不做 | 需要时让 `gen_js` 补字节层（C/Python 已有先例） |
 | 帧间增量（CP/SET/INS/DEL/MOVE/PLACE/POSE/ENTER/EXIT） | 只识别不展开 | 需展开器；该帧 CRC 跳过并报"不展开" |
-| 捕获（`capture.js`） | **未做** | 见下验收标准 |
-| 回放（`replay.js`） | **未做** | 同上 |
+| 捕获（`src/capture.mjs`） | **已做（v0.1）**：clear / draw / print / rect（填+描）；其余进 unsupported | 覆盖面扩展见「P1 落地记录」未做项 |
+| 回放（`src/replay.mjs`） | **已做（v0.1）**：11 op；`scissor` 已知缺口（用了判 FAIL） | 修 scissor |
 
-## 下一步（P1）：捕获与回放
+## P1：捕获与回放（已落地，记录见文末）
 
-**为什么还没做**：这两件要接 Phaser 渲染入口，必须有真实 Phaser 靶游戏才能验；
-没验过的代码不入库（本次只交了能自证的编解码与验收闸）。
+**当初为什么没做**：这两件要接 Phaser 渲染入口，必须有真实 Phaser 靶游戏才能验；
+没验过的代码不入库（v0 只交了能自证的编解码与验收闸）。
 
 **顺序**（每步都要能失败）：
 
-1. **最小靶游戏**：一个单场景 Phaser 3 游戏，每帧固定 3-5 次绘制（含图片 + 文本 + 图形），
+1. **最小靶游戏**：一个单场景 Phaser 游戏，每帧固定几次绘制（含图片 + 文本 + 图形），
    固定步长、无随机、无墙钟。产出的流要能被主仓 `fr_lint` 判全绿。
 2. **回放**（先于捕获）：读 golden 流 → 逐帧调 Phaser 绘制。验收：与主仓 Python 侧
    `fr_render` 对同一流的 `d_crc` 序列**逐帧相等**（这是"两端语义一致"的硬证据）。
+   > 落地时修正：`fr_render` 回放 stdout 的 D_CRC 是**画布像素** CRC，流内 `d_crc` 是
+   > **out 行文本** CRC，两域不可互比（与 dream runner 的口径注意同源）；跨机像素 CRC
+   > 也不可比（本节"风险"第二条自己就说过）。实际落的验收是**行级**：回放器 `executed`
+   > == 流的绘制行（逐行按序）+ 流内 d_crc 自洽。这条口径写进计划时就想错了，记在这里。
 3. **捕获**：包 Phaser 渲染入口产行。验收两条：
    - 同参双跑**逐字节相同**（确定性前置：固定步长 + 无随机 + 无输入）
-   - 同一帧，捕获产的行 == Python 侧对等价调用的渲染结果（round-trip 级对齐）
-4. 跑通后把靶游戏的 golden 流回填主仓 `tests/golden/`，纳入契约。
+   - 同一帧，捕获产的行 == **独立手算**的期望行（按场景配置算，与捕获器零共享）
+4. 跑通后把靶游戏的 golden 流回填主仓 `tests/golden/`，纳入契约。**（未做，见落地记录）**
 
 **风险（先说在前面）**：
 - 注意 `Phaser.HEADLESS` 是"不渲染"，拿不到绘制调用；FR 式捕获要的是"渲染但不显示"
@@ -211,3 +216,46 @@ ListCompositor → Camera → [每个游戏对象] renderWebGLStep(renderer, go,
 **仍未覆盖**：`Graphics`（一对多，一个对象多笔绘制）与 `FillPath`（顶点不经过 `quad`）、
 `Line`/`StrokePath`、相机旋转/缩放下的几何、`roundPixels` 的半像素舍入对 `%.6f` 的影响。
 这些进 P1 的任务清单，每项都要有独立期望值。
+
+## P1 落地记录（2026-11-28，前端仓提交 `3ea222f`）
+
+**交付**（`wangeek/phaser-fr`，`npm test` 四段全绿）：`src/capture.mjs`（捕获）、`src/stepper.mjs`
+（虚拟时钟四步配方）、`src/session.mjs`（会话封装）、`src/replay.mjs`（回放 11 op）、
+`test/run.mjs`（零 npm 依赖的无头浏览器驱动）、`test/{capture,replay,semantics}.html`。
+
+**对照 P1 验收标准**：
+
+| 标准 | 结果 |
+|---|---|
+| 靶游戏产流能被主仓 `fr_lint` 判全绿 | ✅ `fr_lint` exit 0、`fr_check` OK、`fr_dump --geo` 派生矩形正确（主仓工具零改动） |
+| 同参双跑逐字节相同 | ✅ 同页两实例逐字节相同；跨进程两次独立浏览器启动流指纹相同 |
+| 回放：行级对账 | ✅ 回放器 `executed` == 流的绘制行（golden 4 帧、全 op 流 23 行/帧、捕获流） |
+| 捕获：行 == 独立手算期望 | ✅ `test/capture.html` 8 条（C0–C6，见前端仓 README） |
+| 靶流回填主仓 golden | ⬜ **未做** |
+
+**本轮新增实测（Phaser 4.2.1，勿再凭记忆）**：
+
+1. **描边矩形不走 `FillRect`**：`StrokePath.run` 每个描边形状一次，内部**同步**调 `DrawLine`
+   4 次（每边一次，端点是相对形状中心的局部坐标）。只包 `FillRect` 的捕获器会把描边
+   静默丢掉——是验收页里那个 Graphics 哨兵（"unsupported 里只许有 Graphics"）把它抓出来的。
+2. **同一个变换节点，`matrix` 是新的、`quad` 是旧的**：`StrokePath` 参数里的变换节点，
+   `matrix`（`[a,b,c,d,tx,ty]`）是当前形状的（tx/ty = 屏幕中心、a/d = 含相机 zoom 的有效
+   缩放），`quad` 却是上一个对象的。"返回后读就对"只对 `quad` 被重算的路径成立
+   （SubmitterQuad / FillRect），不能一概而论。描边的几何因此取 `matrix` + 对象宽高。
+3. `game.config.backgroundColor` 是 Color 对象：自有键 `r/g/b/a` 四个都是 **0–255**，
+   `alpha` getter 也返回 0–255。按 3.x 记忆当 0–1 乘 255，产出 `clear 0 0 0 65025` 的错行。
+4. `FillCamera.run` 只在相机设了底色时才调，透明底色下不调（所以纳入登记面不会误报）。
+5. Text：`style.color` 是 CSS 串（`"#fff"` 三位形式）；`resolution` 属性不存在（按 1）；
+   `font: "16px monospace"` 简写被解析成 `fontSize "16px"` + `fontFamily "monospace"`。
+6. `Frame` 有 `x/y/width/height`，`source` 是数组（`source[0].width/height`）。
+7. 捕获流的形状与 LÖVE golden 一致（帧 → dt → 资产（首帧）→ clear → 绘制 → s_crc/d_crc），
+   资产载荷 1 字节占位、尺寸真。
+
+**捕获器口径（写死在前端仓 README，这里记决定）**：不支持的**不静默丢**——进
+`Capture.unsupported`（带原因），验收判 FAIL；`s_crc` 固定 0（浏览器侧没有 Lua 堆），
+`d_crc` 真算；`scissor` 回放为已知缺口（Phaser 4 WebGL 下对象级 `setMask` 空操作），
+用了就红，直到修好。
+
+**未做项（按优先级）**：Graphics 路径捕获（fill/stroke → line/poly/circle/arc/points，
+命令缓冲操作码已量过）、旋转对象、atlas 切片（需 quad 资产）、相机底色、scissor 回放、
+靶流回填主仓 golden 并纳入 pytest（纯 Python 可验）。
