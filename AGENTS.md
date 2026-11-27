@@ -60,6 +60,17 @@ FR 帧流 IR（.fr / .frb 双形态）工具链，载体为魔改 LÖVE 11.5：L
 - `tests/` — round-trip 回归、对拍
 - `love2d/` — LÖVE 11.5 素材（win64 运行时 / 官方 11.5 源码 / wiki dump；运行时二进制不入 git；**源码必须与锁定运行时同版本**）
 
+### 命名规则（专有名词分四层，勿混）
+
+| 层 | 形态 | 例 |
+|---|---|---|
+| **仓库**（宿主引擎的 FR 前端/宿主） | `<引擎>-fr`，**引擎在前** | `love-fr`（既有）、未来的 `phaser-fr` / `godot-fr` |
+| MCP 服务名 | `fr-tools` | `.mcp.json` 的 key，跨仓一致 |
+| CLI 工具 | `fr_<动词>` | `fr_dump` / `fr_check` / `fr_diff` / `fr_lint` |
+| 本文档目录 | `fr-<主题>.md` | `fr-spec.md` / `fr-agent-guide.md` |
+
+2026-11-27 教训：提过一个 `fr-phaser`，与既有的 `love-fr` 顺序相反——**新仓库命名先找既有先例，别自造词序**。
+
 ## Code style
 
 - 三语并存：Python（工具）、C（编解码，fr-gen 生成）、Lua（渲染端）；**生成代码不手改，改表重新生成**
