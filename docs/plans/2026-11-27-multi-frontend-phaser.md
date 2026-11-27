@@ -1,8 +1,8 @@
 # 2026-11-27 多前端：Phaser（web 2D）试点
 
 决策：`docs/decisions.md` D17 ｜ 前端仓库：`git@github.com:wangeek/phaser-fr`（`<引擎>-fr` 命名）
-状态：**v0.1 已交付（编解码 + 跨实现验收 + 捕获 + 回放 + 四段验收全绿）**，前端仓提交 `3ea222f`；
-落地记录与新增实测见文末「P1 落地记录」。未做项：Graphics 路径捕获、旋转、atlas 切片、scissor 回放、靶流回填 golden。
+状态：**v0.2 已交付（编解码 + 跨实现验收 + 捕获 + 回放 + 四段验收 + 真实靶子冒烟）**，前端仓提交 `0172d00`；
+落地记录与新增实测见文末「P1 落地记录」「P2 落地记录：真实靶子冒烟」。未做项：Graphics 路径捕获、旋转、相机底色、scissor 回放、靶流回填 golden、真游戏跨运行逐字节相同（已量出三个坑并修，剩"加载期推进"一条）。
 
 ## 为什么是 Phaser，不是 three.js
 
@@ -257,5 +257,66 @@ ListCompositor → Camera → [每个游戏对象] renderWebGLStep(renderer, go,
 用了就红，直到修好。
 
 **未做项（按优先级）**：Graphics 路径捕获（fill/stroke → line/poly/circle/arc/points，
-命令缓冲操作码已量过）、旋转对象、atlas 切片（需 quad 资产）、相机底色、scissor 回放、
-靶流回填主仓 golden 并纳入 pytest（纯 Python 可验）。
+命令缓冲操作码已量过）、旋转对象、相机底色、scissor 回放、靶流回填主仓 golden 并纳入
+pytest（纯 Python 可验）。
+
+## P2 落地记录：真实靶子冒烟（2026-11-28，前端仓提交 `0172d00`）
+
+**做法**：三个 Phaser 官方示例游戏**原样拷贝**进前端仓 `test/smoke/`（来自
+[phaserjs/examples](https://github.com/phaserjs/examples) `public/src/games/`，一个字不改），
+冒烟页 `test/smoke.html` 把它们的渲染管线接上捕获器，输出是**测量报告**而非通过/失败：
+
+```bash
+FR_QUERY=game=breakout|stacker|snowmen node test/run.mjs smoke.html
+```
+
+资产不在前端仓，`/assets/*` 本地缺失时从官方 CDN 取一次并缓存在系统临时目录（与 Phaser
+本体同一套口径）。冒烟不进 `npm test`（要联网、要几十秒）。
+
+**量到的结果**（Phaser 4.2.1 + 无头 Edge + WebGL）：
+
+| 靶子 | 形态 | 100/120 帧出行 | 静默丢 | 独立期望 |
+|---|---|---|---|---|
+| Breakout | 单文件、atlas 帧（砖 60+球+拍）、arcade 物理、指针 | draw 7359（全部） | 0 | **前 36 帧逐行零失配**；资产行与 atlas JSON 逐行相等 |
+| Stacker | 图片 + 带阴影文字 + Rectangle + Grid | draw 240 / print 410 / rect 590 | 0（Grid 120 个对象已登记） | 未写（只测量） |
+| Snowmen Attack | 4 场景 ES module、atlas 动画、Shader、tween、物理、键盘 | draw 2135 / print 220 | 0（Shader 10 个已登记） | 未写（只测量） |
+
+三条流都过主仓 `fr_lint` / `fr_check` 零改动。
+
+**这轮暴露的洞（都已修）**：
+
+1. **atlas 切片是真游戏的主面**：Breakout 100% 是 atlas 帧，Snowmen 全部精灵都是。
+   现在发 `asset quad`（LÖVE `newQuad(x,y,w,h,sw,sh)` 同义）。帧字段口径按源码
+   （`Frame.setSize` / `setTrim`）：`cutX/Y/Width/Height` = 源图矩形，`x/y` = trim 偏移，
+   `width/height` = **裁后**尺寸，未裁尺寸只在 `data.sourceSize`——按"width/height 就是
+   未裁尺寸"写会把锚点算错（Snowmen 的 trimmed 帧：96 被当成 71，实测核对玩家精灵
+   `ox=34=48−14`、`oy=75=96−21`、锚点恰在 (900,196)）。
+2. **一个对象多笔绘制**：Grid 每帧 125 次 `FillRect` 节点调用，按节点计会把缺口放大
+   150 倍。按对象计。
+3. **渲染节点清单不可能穷举**：Snowmen 的 Shader 走的节点不在清单里，一笔都没登记
+   → 改成**对象层对账**：每帧记录走过 `renderWebGLStep` 的对象，帧末凡既没出行也没
+   登记的登记为"渲染节点未覆盖"。静默丢从此结构上不可能。
+
+**确定性：配方从四步补到五步**（两条都是实测踩出来的）：
+
+4. **delta 不是常数**：`k×STEP` 的相邻差差几个 ulp（实测 16.66666666666663 /
+   16.666666666666742 交替），而物理固定步进是严格浮点比较
+   （`_elapsed >= _frameTimeMS`）——差 3e-14 就跳一步、余数累积、相位永久偏开。
+   钉 `lastTime = t − STEP` 让 delta 恒等（Sterbenz：相近 double 相减无舍入），
+   并把物理累加器在捕获前归零。
+5. **墙钟也要虚拟化**：TweenManager 不用游戏 delta——`start()` 里 `startTime =
+   Date.now()`，`getDelta` 按 `gap = 1000/240` 量化。手动步进下 tween **冻结**，
+   偶尔凑满一个 gap 才跳一格（次数取决于墙钟，非确定）。虚拟钟必须同时接管
+   `Date.now`，且**基数要小**：用"真实纪元 + k×STEP"时 double 的 ulp（2.4e-4ms）
+   会把噪声放大成 0.001px 的位置抖动。
+
+顺带量到的：`Phaser.Math.Between` 底层就是全局 `Math.random`（可种子化）；Stacker 的
+`keydown_SPACE` 在 4.2.1 下不触发（事件名只有 `keydown-`），它的键盘开局是坏的——
+冒烟用点击驱动；Stacker 文字全是 `setShadow(..., shadowFill=true)`，FR 的 `print` 行
+带不下，冒烟把它单独计数（120 帧内 3 个）。
+
+**仍未做到：真游戏跨运行逐字节相同。** 五步修完后仍偶发不一致（同一指纹重复出现、
+间歇离群），差异落在物理位置末位到几十像素。源头是**资产异步加载期间场景已经跑过
+可变帧数**（帧数随网络时序变，tween 进度/物理相位/动画帧随之偏），而 Loader 的进度
+本身要靠场景 UPDATE 推进——"加载"与"推进"没分离。要治根得让游戏提供确定性入口，
+或把加载完全移出推进循环，不在 v0.1 范围。README 与本节如实登记，不声称可复现。

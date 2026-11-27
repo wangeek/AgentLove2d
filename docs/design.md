@@ -14,7 +14,7 @@
 | 追架构依据、修决策 | `docs/decisions.md` | 决策台账 D1–D16（追加式） |
 | 查魔改实现细节（挂点/源码行号/开放清单） | `docs/love2d-gap.md` | 魔改设计与取证 |
 | 取魔改引擎的源码、照着构建 | [wangeek/love-fr](https://github.com/wangeek/love-fr)（`fr-capture` 分支） | 捕获层代码的公开镜像；**捕获层改动必须推到这里** |
-| 给另一个宿主（web 2D）做前端 | [wangeek/phaser-fr](https://github.com/wangeek/phaser-fr) + `docs/plans/2026-11-27-multi-frontend-phaser.md` | 第二个前端试点（D17）；`gen_js` 产 JS 表数据面。**v0.1 已落地捕获 + 回放**（捕获走渲染节点图：对象层设身份、节点层 `run` 返回后读几何；回放 11 op，scissor 为已知缺口）；计划文档里的"时间基准""捕获挂点""P1 落地记录"三节是实测结论 |
+| 给另一个宿主（web 2D）做前端 | [wangeek/phaser-fr](https://github.com/wangeek/phaser-fr) + `docs/plans/2026-11-27-multi-frontend-phaser.md` | 第二个前端试点（D17）；`gen_js` 产 JS 表数据面。**v0.2 已落地捕获 + 回放 + 真实靶子冒烟**（捕获走渲染节点图：对象层设身份与对账、节点层 `run` 返回后读几何；atlas 帧发 quad 资产；回放 11 op，scissor 为已知缺口）；计划文档里的"时间基准""捕获挂点""P1 落地记录""P2 落地记录"四节是实测结论 |
 | 查渲染端设计与流载体 | `docs/love2d-renderer.md` | 消费端设计 |
 
 哪些工具离开引擎还能用、测试在什么条件下能跑：见 README 的"依赖"。
